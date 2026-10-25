@@ -180,7 +180,8 @@ async function homeFleet() {
       <p class="sm" style="margin:4px 0 8px">${esc(nm(c.relief_employee_id))} รับรถแทน ${esc(nm(c.absent_employee_id))} · ${esc(c.reason)} · ${bk(c.work_date)} ${tHM(c.claimed_at)} น.</p>
       <div class="acts"><button class="btn pri" data-decide="${c.id}" data-ok="1">อนุมัติ</button><button class="btn" data-decide="${c.id}" data-ok="0">ไม่อนุมัติ</button></div></div>`).join("")}</div>`;
   }
-  if (queue.length === 0) h += `<p class="notice" style="margin-top:12px">ยังไม่มีคิวรถของวันนี้ในระบบ (มีตารางตั้งแต่ 1 พ.ย. 2569)</p>`;
+  if (isMgr()) h += await nextPeriodCard();
+  if (queue.length === 0) h += `<p class="notice" style="margin-top:12px">ยังไม่มีคิวรถของวันนี้ในระบบ</p>`;
   h += `<h2>รถวันนี้</h2><div class="list">` + VEH.map((v) => {
     const w = ws.find((x) => x.vehicle_id === v.id && x.status === "work"), qq = queue.find((x) => x.vehicle_id === v.id), ins = insp.find((x) => x.vehicle_id === v.id);
     return `<article class="bus" style="--c:${COLOR[v.code]}"><img src="${busImg(v.code)}" alt=""><div class="b">
@@ -191,6 +192,33 @@ async function homeFleet() {
   }).join("") + `</div>`;
   h += `<h2>เมนู</h2><div class="actions">${role() === "CUSTOMER" ? ACT.schedule + ACT.vehicle : ACT.inspect + ACT.charge + ACT.maint + ACT.schedule + ACT.vehicle + (isMgr() ? ACT.report : ACT.accident)}</div>`;
   return h;
+}
+/* ---- Next-period schedule reminder (managers): schedule must be finished by the 23rd; it is used from the 26th ---- */
+// Official Thai public holidays (ข้อมูลจากประกาศวันหยุดประจำปี 2569; ตรวจกับประกาศทางราชการอีกครั้งก่อนจัดตาราง). Add next year when announced.
+const HOLIDAYS = { "2026-12-05": "วันพ่อแห่งชาติ", "2026-12-07": "วันหยุดชดเชยวันพ่อแห่งชาติ", "2026-12-10": "วันรัฐธรรมนูญ", "2026-12-31": "วันสิ้นปี" };
+async function nextPeriodCard() {
+  const cur = periodOf(today()), nxt = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+  const [a, b] = periodRange(nxt), dl = new Date(cur.getFullYear(), cur.getMonth(), 23), dlIso = iso(dl);
+  const { count } = await sb.from("work_schedules").select("id", { count: "exact", head: true }).gte("work_date", a).lte("work_date", b);
+  if (count) return `<p class="notice ok" style="margin-top:12px">ตาราง${periodLabel(nxt)} (${periodSpan(nxt)}) สร้างแล้ว · <a href="#pdf">ดู PDF</a></p>`;
+  const left = Math.round((dObj(dlIso) - dObj(today())) / 864e5);
+  const emps = await q(sb.from("employees").select("full_name,kind,home_vehicle_id,weekly_day_off").eq("kind", "regular"));
+  const qs = [];
+  Object.entries(HOLIDAYS).filter(([d]) => d >= a && d <= b).forEach(([d, n]) => {
+    const w = dObj(d).getDay(), off = emps.find((e) => e.kind === "regular" && e.weekly_day_off === w);
+    if (w === 0 || w === 6) qs.push(`<b>${bk(d)} ${n}</b> ตรงวัน${DOWL[w]} ใช้ตารางวันหยุดตามปกติ (วิ่ง 3 คัน) · ยืนยัน`);
+    else if (off) qs.push(`<b>${bk(d)} ${n}</b> (วัน${DOWL[w]}) ${esc(off.full_name.split(" ")[0])} หยุดอยู่แล้ว → ${vcode(off.home_vehicle_id) || "รถประจำ"} จอด ไม่ต้องมีคนขับแทน · ยืนยัน`);
+    else qs.push(`<b>${bk(d)} ${n}</b> (วัน${DOWL[w]}) ไม่มีคนขับประจำหยุด แต่วิ่งแค่ 3 คัน → <b>ให้คันไหนจอด</b> และคนขับคันนั้นลงวันหยุด H หรือไม่`);
+  });
+  const suns = []; for (let t = dObj(a); iso(t) <= b; t.setDate(t.getDate() + 1)) if (t.getDay() === 0) suns.push(`${t.getDate()} ${MS[t.getMonth()]}`);
+  qs.push(`วันอาทิตย์ ${suns.join(", ")} เที่ยว <b>18:30 ออกจากสถานี รฟม.</b> ไม่มีรถรับ (STC-01 จอด) → ยกเลิก / เลื่อนเวลา / ให้รถวิ่งเปล่ากลับไปรับ`);
+  qs.push(`มีคนขับขอลา หรือขอเปลี่ยนวันหยุดประจำสัปดาห์ในรอบนี้หรือไม่ (ลาป่วย S · ลากิจ P · ลาพักร้อน V · ลาไม่รับค่าจ้าง AB)`);
+  qs.push(`ตรวจวันหยุดนักขัตฤกษ์ของรอบนี้กับประกาศทางราชการ (เพิ่ม/ยกเลิกวันหยุดพิเศษ)`);
+  const urgent = left <= 3;
+  return `<section class="card" style="margin-top:12px;border-color:${urgent ? "#ff8a8a" : "#ffd166"}">
+    <div class="row1"><b>ตาราง${periodLabel(nxt)} ยังไม่ได้สร้าง</b><span class="pill ${urgent ? "bad" : "warn"}">${left > 0 ? `เหลือ ${left} วัน` : left === 0 ? "ครบกำหนดวันนี้" : `เลยกำหนด ${-left} วัน`}</span></div>
+    <p class="sm" style="margin:4px 0 8px">${periodSpan(nxt)} · ต้องเสร็จก่อน <b>${bk(dlIso)}</b> เพื่อใช้ตั้งแต่ ${bk(a)} · ตอบคำถามต่อไปนี้ก่อนจัดตาราง</p>
+    <ol class="sm" style="margin:0;padding-left:20px;display:grid;gap:6px">${qs.map((x) => `<li>${x}</li>`).join("")}</ol></section>`;
 }
 const ic = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">${p}</svg>`;
 const ACT = {
