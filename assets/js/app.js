@@ -594,7 +594,7 @@ async function report() {
   main().innerHTML = `<div class="tabs2"><button id="rW" aria-selected="${rpMode === "week"}">ช่วงเบิกเงินสำรอง</button><button id="rM" aria-selected="${rpMode === "month"}">รายรอบ (26–25)</button></div>
    ${rpMode === "week" ? `<div class="grid" style="margin-top:12px"><div class="fld"><label for="rA">ตั้งแต่วันที่</label><input type="date" id="rA" value="${rpA}"></div><div class="fld"><label for="rB">ถึงวันที่</label><input type="date" id="rB" value="${rpB}"></div></div><p class="sm" style="margin:6px 0 0">ช่วงเบิกเงินสำรอง ${label}</p>` : `<div class="wk"><button id="rPrev" aria-label="เดือนก่อน">‹</button><div>${label}<small>สรุปค่าไฟฟ้า ${periodSpan(rpStart)}</small></div><button id="rNext" aria-label="เดือนถัดไป">›</button></div>`}
    ${R.length ? `<section class="hero"><small>ค่าไฟฟ้ารวม (รวม VAT)</small><div class="big num">${fmt(T)}<span>บาท</span></div><div class="kpis num"><div><b>${fmt(K, 2)}</b><span>kWh</span></div><div><b>${R.length}</b><span>ครั้งที่ชาร์จ</span></div><div><b>${K ? fmt(T / K) : "–"}</b><span>บาท/kWh</span></div></div></section>
-   <h2>ค่าไฟฟ้ารายวัน <small>บาท</small></h2><section class="card"><div class="legend"><span><i style="--c:var(--blue)"></i>รวมทุกคัน</span></div><div class="chart" id="rc"></div></section>
+   <h2>ค่าไฟฟ้ารายวันแยกรายคัน <small>บาท · แตะกราฟเพื่อดูยอด</small></h2><section class="card"><div class="legend" id="rcLeg"></div><div class="chart" id="rc"></div></section>
    <h2>แยกรายคัน</h2><section class="card">${buses.map((x) => { const l = R.filter((r) => r.bus === x), aa = sum(l, (r) => r.amt), mx = Math.max(...buses.map((y) => sum(R.filter((r) => r.bus === y), (r) => r.amt))); return `<div class="busrow" style="--c:${SCOL[x]}"><div class="n"><i></i>${x}</div><div><div class="fill" style="width:${(aa / mx) * 100}%"></div><div class="v num"><span><b>${fmt(aa)}</b> บาท</span><span>${l.length} ครั้ง</span><span>${fmt(sum(l, (r) => r.kwh), 1)} kWh</span><span>${fmt(sum(l, (r) => r.kwh) / l.length, 1)} kWh/ครั้ง</span></div></div></div>`; }).join("")}</section>
    ${R.some((r) => r.bus === "ไม่ระบุ") ? `<h2>ต้องตรวจสอบ</h2><p class="notice">ใบเสร็จไม่ระบุทะเบียน ${R.filter((r) => r.bus === "ไม่ระบุ").length} ใบ รวม ${fmt(sum(R.filter((r) => r.bus === "ไม่ระบุ"), (r) => r.amt))} บาท ยังแยกไม่ได้ว่าเป็นรถคันไหน</p>` : ""}
    <h2>รายการใบเสร็จ</h2><section class="card" style="overflow-x:auto"><table class="t"><thead><tr><th>วันที่</th><th>เลขที่ใบเสร็จ</th><th>รถ</th><th class="r">kWh</th><th class="r">บาท</th></tr></thead><tbody>${R.map((r) => `<tr><td class="num">${bk(r.receipt_date)}</td><td class="num">${r.receipt_no || "–"}</td><td>${r.bus}</td><td class="r num">${fmt(r.kwh, 2)}</td><td class="r num">${fmt(r.amt)}</td></tr>`).join("")}<tr><td colspan="3"><b>รวม</b></td><td class="r num"><b>${fmt(K, 2)}</b></td><td class="r num"><b>${fmt(T)}</b></td></tr></tbody></table></section>
@@ -605,18 +605,37 @@ async function report() {
   else { $("rPrev").onclick = () => { rpStart.setMonth(rpStart.getMonth() - 1); report(); }; $("rNext").onclick = () => { rpStart.setMonth(rpStart.getMonth() + 1); report(); }; }
   if (!R.length) return;
   $("rCopy").onclick = () => copyText(`สรุปค่าไฟฟ้า MRTA Shuttle Bus ${label}\n` + buses.map((x) => { const l = R.filter((r) => r.bus === x); return `${x}: ${l.length} ครั้ง ${fmt(sum(l, (r) => r.kwh), 1)} kWh ${fmt(sum(l, (r) => r.amt))} บาท`; }).join("\n") + `\nรวม ${R.length} ครั้ง ${fmt(K, 1)} kWh ${fmt(T)} บาท · แนบใบเสร็จ ${R.length} ใบ`);
-  // line chart
-  const W = 360, H = 230, ml = 44, mr = 14, mt = 24, mb = 30, pw = W - ml - mr, ph = H - mt - mb;
-  const vals = days.map((d) => sum(R.filter((r) => r.receipt_date === d), (r) => r.amt));
-  const vmax = Math.max(...vals), st = vmax > 1500 ? 500 : vmax > 600 ? 250 : 100, ymax = Math.ceil((vmax * 1.12) / st) * st, y = (v) => mt + ph - (v / ymax) * ph, X = (i) => ml + (days.length === 1 ? pw / 2 : (i * pw) / (days.length - 1));
-  let g = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="ค่าไฟฟ้ารายวัน"><defs><linearGradient id="ar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1fc2ff" stop-opacity=".28"/><stop offset="1" stop-color="#1fc2ff" stop-opacity="0"/></linearGradient></defs>`;
+  // line chart: one line per bus (all four always shown; "ไม่ระบุ" only when such receipts exist)
+  const LB = ["STC-01", "STC-02", "STC-03", "STC-04"].concat(R.some((r) => r.bus === "ไม่ระบุ") ? ["ไม่ระบุ"] : []);
+  const axis = []; for (let t = dObj(a), e = dObj(b); t <= e && axis.length < 62; t.setDate(t.getDate() + 1)) axis.push(iso(t));
+  const W = 360, H = 240, ml = 44, mr = 14, mt = 16, mb = 30, pw = W - ml - mr, ph = H - mt - mb;
+  const ser = LB.map((x) => ({ x, v: axis.map((d) => sum(R.filter((r) => r.bus === x && r.receipt_date === d), (r) => r.amt)) }));
+  const vmax = Math.max(1, ...ser.flatMap((s) => s.v)), st = vmax > 1500 ? 500 : vmax > 600 ? 250 : vmax > 200 ? 100 : 50, ymax = Math.ceil((vmax * 1.12) / st) * st;
+  const y = (v) => mt + ph - (v / ymax) * ph, X = (i) => ml + (axis.length === 1 ? pw / 2 : (i * pw) / (axis.length - 1));
+  let g = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="ค่าไฟฟ้ารายวันแยกรายคัน">`;
   for (let v = 0; v <= ymax; v += st) g += `<line x1="${ml}" x2="${W - mr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${ml - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${v.toLocaleString("th-TH")}</text>`;
-  const skip = Math.ceil(days.length / 7);
-  days.forEach((d, i) => { if (i % skip === 0 || i === days.length - 1) { const x = dObj(d); g += `<text x="${X(i)}" y="${H - 9}" text-anchor="middle" font-size="11" fill="var(--muted)">${DOW[x.getDay()]} ${x.getDate()}</text>`; } });
-  const pts = vals.map((v, i) => `${X(i)},${y(v)}`).join(" ");
-  g += `<polygon points="${X(0)},${y(0)} ${pts} ${X(days.length - 1)},${y(0)}" fill="url(#ar)"/><polyline points="${pts}" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linejoin="round"/>`;
-  vals.forEach((v, i) => { g += `<circle cx="${X(i)}" cy="${y(v)}" r="4.5" fill="var(--blue)" stroke="var(--card)" stroke-width="2"/>`; if (days.length <= 7) g += `<text x="${X(i)}" y="${y(v) - 10}" text-anchor="middle" font-size="11" font-weight="600" fill="var(--fg)">${fmt(v, 0)}</text>`; });
-  $("rc").innerHTML = g + `</svg>`;
+  const skip = Math.ceil(axis.length / 7);
+  axis.forEach((d, i) => { if (i % skip === 0 || i === axis.length - 1) { const x = dObj(d); g += `<text x="${X(i)}" y="${H - 9}" text-anchor="middle" font-size="11" fill="var(--muted)">${axis.length <= 7 ? DOW[x.getDay()] + " " : ""}${x.getDate()}</text>`; } });
+  g += `<line id="rcCur" x1="0" x2="0" y1="${mt}" y2="${mt + ph}" stroke="var(--muted)" stroke-dasharray="3 3" visibility="hidden"/>`;
+  ser.forEach((s) => {
+    const c = SCOL[s.x], dash = s.x === "ไม่ระบุ" ? ` stroke-dasharray="5 4"` : "";
+    g += `<polyline points="${s.v.map((v, i) => `${X(i)},${y(v)}`).join(" ")}" fill="none" stroke="${c}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"${dash}/>`;
+    if (axis.length <= 15) s.v.forEach((v, i) => { if (v) g += `<circle cx="${X(i)}" cy="${y(v)}" r="3.6" fill="${c}" stroke="var(--card)" stroke-width="1.5"/>`; });
+  });
+  $("rc").innerHTML = g + `</svg><div class="tip" id="rcTip" hidden></div>`;
+  $("rcLeg").innerHTML = ser.map((s) => `<span><i style="--c:${SCOL[s.x]}"></i>${s.x} <b class="num">${fmt(sum(s.v, (v) => v), 0)}</b></span>`).join("");
+  const box = $("rc"), svg = box.querySelector("svg"), tip = $("rcTip"), cur = $("rcCur");
+  const show = (ev) => {
+    const r = svg.getBoundingClientRect(), px = ((ev.clientX - r.left) / r.width) * W;
+    const i = Math.max(0, Math.min(axis.length - 1, Math.round(axis.length === 1 ? 0 : ((px - ml) / pw) * (axis.length - 1))));
+    cur.setAttribute("x1", X(i)); cur.setAttribute("x2", X(i)); cur.setAttribute("visibility", "visible");
+    const tot = sum(ser, (s) => s.v[i]);
+    tip.innerHTML = `<b>${bk(axis[i])}</b>` + ser.map((s) => `<div class="r"><span><i style="--c:${SCOL[s.x]}"></i>${s.x}</span><span class="num">${s.v[i] ? fmt(s.v[i]) : "–"}</span></div>`).join("") + `<div class="r" style="border-top:1px solid #c9d3ea;margin-top:3px;padding-top:3px"><b>รวม</b><b class="num">${fmt(tot)}</b></div>`;
+    tip.hidden = false; const bx = box.getBoundingClientRect(), left = (X(i) / W) * bx.width;
+    tip.style.left = Math.max(0, Math.min(bx.width - tip.offsetWidth, left - tip.offsetWidth / 2)) + "px"; tip.style.top = "0px";
+  };
+  svg.addEventListener("pointermove", show); svg.addEventListener("pointerdown", show);
+  svg.addEventListener("pointerleave", () => { tip.hidden = true; cur.setAttribute("visibility", "hidden"); });
 }
 
 /* ================= ACCOUNT / PASSWORD ================= */
