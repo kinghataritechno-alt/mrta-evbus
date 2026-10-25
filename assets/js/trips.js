@@ -24,10 +24,13 @@ async function tripPage() {
   if (!vs.length) { main().innerHTML = `<div class="empty"><b>วันนี้ยังไม่มีรถที่ได้รับมอบหมาย</b>บันทึกรอบเดินรถได้เมื่อมีรถในตารางงานของวันนี้</div>`; return; }
   if (!TRIP.vid || !vs.some((v) => v.id === TRIP.vid)) TRIP.vid = vs[0].id;
   const v = vById(TRIP.vid);
-  const [qrow, logs] = await Promise.all([
+  const [qrow, logs, stops] = await Promise.all([
     q(sb.from("vehicle_queue").select("*").eq("work_date", TRIP.date).eq("vehicle_id", TRIP.vid)),
     tl(sb.from("trip_logs").select("*").eq("work_date", TRIP.date).eq("vehicle_id", TRIP.vid).order("scheduled_time")),
+    q(sb.from("trip_stops").select("trip_log_id,board,alight").eq("work_date", TRIP.date).eq("vehicle_id", TRIP.vid)).catch(() => []),
   ]);
+  const pax = (l) => { const r = stops.filter((x) => x.trip_log_id === l.id); return r.length ? { b: r.reduce((s, x) => s + x.board, 0), a: r.reduce((s, x) => s + x.alight, 0) } : null; };
+  const paxDay = stops.reduce((s, x) => s + x.board, 0);
   const qq = qrow[0], plan = qq ? tripsOf(qq.queue_code) : [];
   const done = (t) => logs.find((l) => String(l.scheduled_time).slice(0, 5) === t.time && l.origin === t.origin);
   const now = TRIP.date === today() ? minsOf(nowHM()) : TRIP.date < today() ? 9999 : -1;
@@ -37,11 +40,11 @@ async function tripPage() {
   main().innerHTML = `${isMgr() || role() === "CUSTOMER" ? `<div class="grid"><div class="fld"><label for="tDate">วันที่</label><input type="date" id="tDate" value="${TRIP.date}"></div></div>` : ""}
    ${busPicker(vs, TRIP.vid, "data-tv")}
    <section class="sum"><div class="tile"><small>ตามแผน</small><b class="num">${plan.length || "–"}</b><span>${qq?.queue_code === "R2" ? "รอบ" : "เที่ยว"}</span></div><div class="tile"><small>รายงานแล้ว</small><b class="num">${nDone}</b><span>${qq?.queue_code === "R2" ? "รอบ" : "เที่ยว"}</span></div><div class="tile ${plan.length - nDone > 0 && now === 9999 ? "alert" : ""}"><small>ยังไม่รายงาน</small><b class="num">${Math.max(0, plan.length - nDone)}</b><span>${qq?.queue_code === "R2" ? "รอบ" : "เที่ยว"}</span></div></section>
-   ${qq ? `<p class="sm" style="margin:8px 0 0">${v.code} · คิว ${esc(qq.queue_code)} · ${ROUTE[v.route_code] || ""} · ${bk(TRIP.date)}</p>` : `<div class="empty" style="margin-top:12px"><b>${v.code} ไม่มีคิววันนี้</b>รถจอดหรือยังไม่ได้จัดตาราง</div>`}
+   ${qq ? `<p class="sm" style="margin:8px 0 0">${v.code} · คิว ${esc(qq.queue_code)} · ${ROUTE[v.route_code] || ""} · ${bk(TRIP.date)}${paxDay ? ` · ผู้โดยสารขึ้นวันนี้ <b>${paxDay}</b> คน` : ""}</p>` : `<div class="empty" style="margin-top:12px"><b>${v.code} ไม่มีคิววันนี้</b>รถจอดหรือยังไม่ได้จัดตาราง</div>`}
    <div class="list" style="margin-top:8px">${plan.map((t, i) => { const l = done(t), late = l && minsOf(bkkHM(l.taken_at)) > minsOf(t.time) + LATE_MIN;
      return `<button class="day trip ${i === nextIdx ? "today" : ""}" data-trip="${i}" style="text-align:left;cursor:pointer;border-left:4px solid ${l ? (late ? "#ffb347" : "#3fa725") : i === nextIdx ? "#1fc2ff" : "transparent"}">
        <div class="d"><b class="num">${t.time}</b><small>${qq.queue_code === "R2" ? "รอบ " + t.no : "เที่ยว " + t.no}</small></div>
-       <div class="sm">${esc(t.origin)}${l ? `<em class="sub2">${l.status === "cancelled" ? "ยกเลิก" : `รายงาน ${bkkHM(l.taken_at)} น.${late ? " · ช้า" : ""}`}</em>` : i === nextIdx ? `<em class="sub2">เที่ยวถัดไป · แตะเพื่อถ่ายรูปรายงาน</em>` : ""}</div></button>`; }).join("")}
+       <div class="sm">${esc(t.origin)}${l ? `<em class="sub2">${l.status === "cancelled" ? "ยกเลิก" : `รายงาน ${bkkHM(l.taken_at)} น.${late ? " · ช้า" : ""}${pax(l) ? ` · ขึ้น ${pax(l).b} ลง ${pax(l).a}` : ""}`}</em>` : i === nextIdx ? `<em class="sub2">เที่ยวถัดไป · แตะเพื่อถ่ายรูปรายงาน</em>` : ""}</div></button>`; }).join("")}
    ${extra.map((l) => `<div class="day"><div class="d"><b class="num">${String(l.scheduled_time).slice(0, 5)}</b><small>เพิ่ม</small></div><div class="sm">${esc(l.origin)}<em class="sub2">รายงาน ${bkkHM(l.taken_at)} น. ${esc(l.note || "")}</em></div></div>`).join("")}</div>
    ${isMgr() || role() === "CUSTOMER" ? `<a class="btn block" href="#tripreport" style="margin-top:14px">รายงานรอบเดินรถประจำเดือน</a>` : ""}`;
   main().querySelectorAll("[data-tv]").forEach((b) => (b.onclick = () => { TRIP.vid = b.dataset.tv; tripPage(); }));
@@ -65,6 +68,7 @@ function tripSheet(v, qq, t, existing) {
     <img id="tPrev" alt="" style="display:none;width:100%;border-radius:12px;margin-top:10px">
     <div class="fld" style="margin-top:10px"><label for="tNote">หมายเหตุ (ถ้ามี)</label><input id="tNote" placeholder="เช่น รถติด ออกช้า 5 นาที" value="${esc(existing?.note || "")}"></div>
     <div style="display:grid;gap:8px;margin-top:10px"><button class="btn block pri" id="tSave" disabled>บันทึกและส่งกลุ่ม LINE</button>
+    <button class="btn block" id="tPax">👥 บันทึกผู้โดยสารขึ้น-ลงเที่ยวนี้</button>
     ${isMgr() ? `<button class="btn block" id="tCancel">บันทึกว่ายกเลิกเที่ยวนี้</button>` : ""}</div>` : `<p class="sm">บันทึกย้อนหลังได้เฉพาะผู้จัดการ</p>`}</div>`;
   s.hidden = false;
   $("shX").onclick = () => (s.hidden = true);
@@ -79,6 +83,7 @@ function tripSheet(v, qq, t, existing) {
     TRIP.url = URL.createObjectURL(TRIP.blob); $("tPrev").src = TRIP.url; $("tPrev").style.display = "block"; $("tSave").disabled = false;
   };
   $("tSave").onclick = () => saveTrip(v, qq, t, "standby");
+  $("tPax").onclick = () => openStops(v, qq, t);
   if ($("tCancel")) $("tCancel").onclick = () => saveTrip(v, qq, t, "cancelled");
 }
 
@@ -120,11 +125,12 @@ function shareTrip(v, qq, t, note) {
   const s = $("sheet");
   s.innerHTML = `<div class="in"><div class="sh"><b>บันทึกแล้ว · ส่งกลุ่ม LINE</b><button class="lnk" id="shX">ปิด</button></div>
     <pre class="sm" style="white-space:pre-wrap;background:rgba(255,255,255,.06);border-radius:10px;padding:10px;margin:0 0 10px;font-family:inherit">${esc(text)}</pre>
-    <div style="display:grid;gap:8px"><button class="btn block pri" id="tShare">ส่งรูปเข้า LINE (คัดลอกข้อความให้แล้ว)</button><button class="btn block" id="tCopy">คัดลอกข้อความอีกครั้ง</button></div>
+    <div style="display:grid;gap:8px"><button class="btn block pri" id="tShare">ส่งรูปเข้า LINE (คัดลอกข้อความให้แล้ว)</button><button class="btn block" id="tCopy">คัดลอกข้อความอีกครั้ง</button><button class="btn block" id="tGoPax">👥 เริ่มบันทึกผู้โดยสารเที่ยวนี้ →</button></div>
     <p class="sm" style="margin:10px 0 0">ใน LINE: เลือกกลุ่ม → ส่งรูป → กดค้างช่องพิมพ์แล้ววางข้อความ</p></div>`;
   s.hidden = false;
   $("shX").onclick = () => (s.hidden = true);
   $("tCopy").onclick = () => copyText(text);
+  $("tGoPax").onclick = () => openStops(v, qq, t);
   $("tShare").onclick = async () => {
     try { await navigator.clipboard.writeText(text); } catch (e) {}
     if (file && navigator.canShare && navigator.canShare({ files: [file] })) navigator.share({ files: [file], text }).catch(() => {});
@@ -156,18 +162,24 @@ async function tripReport() {
   const sumC = cars.map((c, j) => G.reduce((s, r) => { const x = r[j]; if (x) { s.plan += x.plan; s.ok += x.ok; s.late += x.late; s.can += x.can; s.days++; } return s; }, { plan: 0, ok: 0, late: 0, can: 0, days: 0 }));
   const pct = (o, p) => (p ? Math.round((o / p) * 100) : 0);
   const label = `${MONTH[trMonth.getMonth()]} ${trMonth.getFullYear() + 543}`;
+  const P = await paxStats(a, b);
+  const paxHTML = !P ? `<p class="notice" style="margin-top:12px">ระบบบันทึกผู้โดยสารยังไม่เปิดใช้ (รอรัน SQL trip_stops)</p>` : !P.n ? `<div class="empty" style="margin-top:12px"><b>ยังไม่มีข้อมูลผู้โดยสารเดือนนี้</b>คนขับบันทึกได้ที่หน้ารายงานรอบเดินรถ → บันทึกผู้โดยสาร</div>` :
+    `<h2>ผู้โดยสาร <small>รวม ${P.total.toLocaleString("th-TH")} คน</small></h2>
+     <section class="sum">${cars.map((c) => `<div class="tile"><small>${c}</small><b class="num">${(P.byCar[c] || 0).toLocaleString("th-TH")}</b><span>คน</span></div>`).join("")}</section>
+     <section class="sum"><div class="tile"><small>เช้า 07:15–08:40</small><b class="num">${P.bySlot.am}</b><span>คน</span></div><div class="tile"><small>กลางวัน 09:00–16:30</small><b class="num">${P.bySlot.off}</b><span>คน</span></div><div class="tile"><small>เย็น 17:00–19:20</small><b class="num">${P.bySlot.pm}</b><span>คน</span></div></section>
+     <section class="card" style="margin-top:10px;overflow-x:auto"><table class="t"><thead><tr><th>จุดขึ้นรถ</th><th class="r">คน</th></tr></thead><tbody>${stopOrder(P.byStop).map(([k, n]) => { const [d, st] = k.split("|"); return `<tr><td>${{ CC: "ศูนย์ฯ → รฟม.", LOT: "รฟม. → ศูนย์ฯ", R2: "ศิริราช" }[d]} · ${esc(st)}</td><td class="r num">${n}</td></tr>`; }).join("")}</tbody></table></section>`;
   const tbl = `<table class="t"><thead><tr><th>วันที่</th>${cars.map((c) => `<th class="r">${c}</th>`).join("")}</tr></thead><tbody>${days.map((d, i) => `<tr><td class="num">${dObj(d).getDate()} ${DOW[dObj(d).getDay()]}</td>${G[i].map((x) => `<td class="r num">${x ? `${x.ok}/${x.plan}${x.late ? ` <small style="color:#ffb347">ช้า${x.late}</small>` : ""}` : `<span class="sm">จอด</span>`}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   main().innerHTML = `<div class="wk"><button id="trPrev" aria-label="เดือนก่อน">‹</button><div>${label}<small>รายงานรอบเดินรถ · 1 – ${days.length} ${MS[trMonth.getMonth()]}</small></div><button id="trNext" aria-label="เดือนถัดไป">›</button></div>
    <section class="sum">${cars.map((c, j) => `<div class="tile"><small>${c}</small><b class="num">${pct(sumC[j].ok, sumC[j].plan)}%</b><span>${sumC[j].ok}/${sumC[j].plan} ${c === "STC-03" ? "รอบ" : "เที่ยว"}</span></div>`).join("")}</section>
    <a class="btn block" id="trPdf" href="#" style="margin-top:12px">สร้าง PDF รายงานประจำเดือน</a>
    <h2>รายวัน <small>รายงานแล้ว/ตามแผน</small></h2><section class="card" style="overflow-x:auto">${tbl}</section>
-   <p class="sm">นับเฉพาะเที่ยวที่ถ่ายรูปรายงาน "สแตนด์บายรับออก" · ช้า = บันทึกหลังเวลาออกเกิน ${LATE_MIN} นาที · STC-03 นับเป็นรอบ (2 รอบ/วัน)</p>`;
+   <p class="sm">นับเฉพาะเที่ยวที่ถ่ายรูปรายงาน "สแตนด์บายรับออก" · ช้า = บันทึกหลังเวลาออกเกิน ${LATE_MIN} นาที · STC-03 นับเป็นรอบ (2 รอบ/วัน)</p>${paxHTML}`;
   $("trPrev").onclick = () => { trMonth.setMonth(trMonth.getMonth() - 1); tripReport(); };
   $("trNext").onclick = () => { trMonth.setMonth(trMonth.getMonth() + 1); tripReport(); };
-  $("trPdf").onclick = (e) => { e.preventDefault(); tripPdf(label, days, cars, G, sumC, logs); };
+  $("trPdf").onclick = (e) => { e.preventDefault(); tripPdf(label, days, cars, G, sumC, logs, P); };
 }
 
-async function tripPdf(label, days, cars, G, sumC, logs) {
+async function tripPdf(label, days, cars, G, sumC, logs, P) {
   const W = 794, H = 1123, pct = (o, p) => (p ? ((o / p) * 100).toFixed(1) : "0.0");
   const head = `<header class="dh"><img src="assets/img/mrta-logo.png" alt="" class="dm"><div class="dt"><h1>รายงานรอบเดินรถประจำเดือน ${label}</h1><p>MRTA Shuttle Bus · สแตนด์บายรับออกพร้อมรูปถ่ายประทับเวลา</p></div><div class="dco"><img src="assets/img/smart-terminal-logo.png" alt=""><span>บริษัท สมาร์ท เทอร์มินอล<br>คอร์ปอเรชั่น จำกัด</span></div></header>`;
   const foot = (p, n) => `<footer class="df"><span>ข้อมูลจากระบบ ณ ${bk(today())} ${nowHM()} น. · เที่ยวตามแผนจากคิวรถประจำวัน</span><span>หน้า ${p}/${n}</span></footer>`;
@@ -180,8 +192,22 @@ async function tripPdf(label, days, cars, G, sumC, logs) {
     <tr><td><b>รวม</b></td><td></td><td class="r"><b>${tot.plan}</b></td><td class="r"><b>${tot.ok}</b></td><td class="r"><b>${pct(tot.ok, tot.plan)}</b></td><td class="r"><b>${tot.late}</b></td><td class="r"><b>${tot.can}</b></td><td class="r"><b>${Math.max(0, tot.plan - tot.ok - tot.can)}</b></td></tr></tbody></table>
     <h2>รายวัน (รายงานแล้ว/ตามแผน)</h2><table class="dtb sm xs"><thead><tr><th>วันที่</th><th>วัน</th>${cars.map((c) => `<th class="r"><i style="background:${VHEX[c]}"></i>${c}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>
     <p class="dnote">ช้า = บันทึกหลังเวลาออกตามตารางเกิน ${LATE_MIN} นาที · STC-03 เส้น MRT อิสรภาพ – รพ.ศิริราช นับเป็นรอบ · รูปถ่ายทุกเที่ยวเก็บในระบบ ดูได้ที่เมนูรอบเดินรถ</p>
-    <div class="dsign"><div>ผู้จัดทำ<br><br>วันที่ ........./........./.........</div><div>ผู้ตรวจสอบ<br><br>วันที่ ........./........./.........</div><div>ผู้อนุมัติ<br><br>วันที่ ........./........./.........</div></div>${foot(1, 1)}`;
-  const html = `<div class="doc" style="width:${W}px"><section class="dpg" style="width:${W}px;height:${H}px;margin:0;box-shadow:none">${p1}</section></div>`;
+    <div class="dsign"><div>ผู้จัดทำ<br><br>วันที่ ........./........./.........</div><div>ผู้ตรวจสอบ<br><br>วันที่ ........./........./.........</div><div>ผู้อนุมัติ<br><br>วันที่ ........./........./.........</div></div>${foot(1, P && P.n ? 2 : 1)}`;
+  let p2 = "";
+  if (P && P.n) {
+    const times = Object.keys(P.byTime).sort();
+    const dayRows = days.map((d) => `<tr class="${dObj(d).getDay() % 6 === 0 ? "we" : ""}"><td class="c">${dObj(d).getDate()}</td><td>${DOW[dObj(d).getDay()]}</td>${cars.map((c) => `<td class="r">${P.byDay[d]?.[c] ?? "–"}</td>`).join("")}<td class="r"><b>${cars.reduce((s, c) => s + (P.byDay[d]?.[c] || 0), 0) || "–"}</b></td></tr>`).join("");
+    const stopRows = stopOrder(P.byStop).map(([k, n]) => { const [d, st] = k.split("|"); return `<tr><td>${{ CC: "ศูนย์ฯ → รฟม.", LOT: "รฟม. → ศูนย์ฯ", R2: "ศิริราช" }[d]}</td><td>${esc(st)}</td><td class="r">${n}</td></tr>`; }).join("");
+    const timeRows = times.map((t) => `<tr><td>${t}</td>${["STC-01", "STC-02", "STC-04"].map((c) => `<td class="r">${P.byTime[t][c] || 0}</td>`).join("")}<td class="r"><b>${Object.values(P.byTime[t]).reduce((x, y) => x + y, 0)}</b></td></tr>`).join("");
+    p2 = `${head}<div class="dcards">${cars.map((c) => `<div class="dcard" style="--c:${VHEX[c]}"><b>${c}</b><span>ผู้โดยสารขึ้น</span><strong>${(P.byCar[c] || 0).toLocaleString("th-TH")}</strong><span>คน/เดือน</span></div>`).join("")}</div>
+      <div style="display:flex;gap:14px;margin-top:8px"><div style="flex:1.1"><h2>รายวัน (คนขึ้น)</h2><table class="dtb sm xs"><thead><tr><th>วันที่</th><th>วัน</th>${cars.map((c) => `<th class="r">${c.slice(4)}</th>`).join("")}<th class="r">รวม</th></tr></thead><tbody>${dayRows}<tr><td></td><td><b>รวม</b></td>${cars.map((c) => `<td class="r"><b>${P.byCar[c] || 0}</b></td>`).join("")}<td class="r"><b>${P.total}</b></td></tr></tbody></table></div>
+      <div style="flex:1"><h2>ช่วงเวลา (ศูนย์ฯ–รฟม.)</h2><table class="dst"><tbody><tr><td>Peak เช้า 07:15–08:40</td><td class="r">${P.bySlot.am}</td></tr><tr><td>Off-Peak 09:00–16:30</td><td class="r">${P.bySlot.off}</td></tr><tr><td>Peak เย็น 17:00–19:20</td><td class="r">${P.bySlot.pm}</td></tr></tbody></table>
+      <h2>แยกจุดขึ้นรถ</h2><table class="dst"><thead><tr><th>ทิศทาง</th><th>จุด</th><th class="r">คน</th></tr></thead><tbody>${stopRows}</tbody></table>
+      <h2>แยกตามเวลาออก</h2><table class="dtb sm xs"><thead><tr><th>เวลา</th><th class="r">01</th><th class="r">02</th><th class="r">04</th><th class="r">รวม</th></tr></thead><tbody>${timeRows}</tbody></table></div></div>
+      <p class="dnote">ข้อมูลจากการบันทึกของพนักงานขับรถทุกจุดจอดในแอพ (แทนแบบฟอร์มกระดาษ) · ทุกตารางคำนวณจากข้อมูลชุดเดียวกัน ยอดรวมจึงตรงกันทุกตาราง</p>${foot(2, 2)}`;
+  }
+  const pg = (x) => `<section class="dpg" style="width:${W}px;height:${H}px;margin:0;box-shadow:none">${x}</section>`;
+  const html = `<div class="doc" style="width:${W}px">${pg(p1)}${p2 ? pg(p2) : ""}</div>`;
   const fname = `MRTA_รายงานรอบเดินรถ_${trMonth.getFullYear() + 543}-${String(trMonth.getMonth() + 1).padStart(2, "0")}.pdf`;
   if (!window.html2pdf) { toast("โหลดตัวสร้าง PDF ไม่ได้"); return; }
   toast("กำลังสร้าง PDF…");
@@ -198,6 +224,111 @@ async function tripPdf(label, days, cars, G, sumC, logs) {
   } catch (e) { toast("สร้าง PDF ไม่สำเร็จ: " + errMsg(e)); }
   finally { stage.remove(); }
 }
+
+/* ---------- passengers per stop (replaces the paper "ตารางการเก็บข้อมูลผู้ใช้บริการ") ---------- */
+const P_CC = "อาคารจอดรถศูนย์วัฒนธรรมฯ", P_LOT = "ลานจอดรถ สถานี รฟม.", P_B2 = "อาคาร 2 รฟม.", P_B1 = "อาคาร 1 รฟม.";
+const R2_STOPS = {
+  1: ["รฟม. สำนักงานใหญ่", "รพ.ศิริราช", "ตรงข้าม The Most อิสรภาพ", "ตรงข้าม dBura อิสรภาพ", "MRT อิสรภาพ", "ตรงข้ามวัดอรุณราชวราราม", "ตรงข้าม รพ.ศิริราช", "ซอยอรุณอมรินทร์ 53 (ลุมพินีคอนโด)", "หอพักเจ้าพระยา (ศิริราช)", "รพ.ศิริราช (วงเวียน)", "ตรงข้าม The Most อิสรภาพ", "ตรงข้าม dBura อิสรภาพ", "MRT อิสรภาพ"],
+  2: ["MRT อิสรภาพ", "ตรงข้ามวัดอรุณราชวราราม", "ตรงข้าม รพ.ศิริราช", "ซอยอรุณอมรินทร์ 53 (ลุมพินีคอนโด)", "หอพักเจ้าพระยา (ศิริราช)", "รพ.ศิริราช (วงเวียน)", "ตรงข้าม The Most อิสรภาพ", "ตรงข้าม dBura อิสรภาพ", "MRT อิสรภาพ"],
+};
+// ศูนย์ฯ → อาคาร 2 → อาคาร 1 → ลานจอด รฟม. · ลานจอด รฟม. → อาคาร 2 → อาคาร 1 → ศูนย์ฯ (ตามแบบฟอร์มเดิม)
+const stopsOf = (qc, t) => qc === "R2" ? R2_STOPS[t.no] || [] : t.origin === ORIGIN.C ? [P_CC, P_B2, P_B1, P_LOT] : [P_LOT, P_B2, P_B1, P_CC];
+const SKEY = "mrta-trip-stops", QKEY = "mrta-stop-queue";
+const lsGet = (k) => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+let ST = null; // { logId, vid, code, date, qc, no, time, origin, rows:[{seq,stop,arrived_at,departed_at,board,alight}] }
+
+async function ensureLog(v, qq, t) {
+  const ex = await tl(sb.from("trip_logs").select("id").eq("work_date", TRIP.date).eq("vehicle_id", v.id).eq("scheduled_time", t.time).eq("origin", t.origin));
+  if (ex[0]) return ex[0].id;
+  const emp = isMgr() ? (await q(sb.from("work_schedules").select("employee_id").eq("work_date", TRIP.date).eq("vehicle_id", v.id).eq("status", "work")))[0]?.employee_id || null : ME.employee?.id;
+  const row = { work_date: TRIP.date, vehicle_id: v.id, employee_id: emp, route_code: v.route_code || (qq.queue_code === "R2" ? "R2" : "R1"), queue_code: qq.queue_code, trip_no: t.no, scheduled_time: t.time, origin: t.origin, status: "standby", note: "บันทึกผู้โดยสาร (ยังไม่ถ่ายรูปรับออก)" };
+  const r = await q(sb.from("trip_logs").insert(row).select("id").single());
+  return r.id;
+}
+async function openStops(v, qq, t) {
+  try {
+    const logId = await ensureLog(v, qq, t);
+    const got = await q(sb.from("trip_stops").select("*").eq("trip_log_id", logId).order("seq"));
+    const rows = stopsOf(qq.queue_code, t).map((stop, i) => { const g = got.find((x) => x.seq === i + 1); return { seq: i + 1, stop, arrived_at: g?.arrived_at || null, departed_at: g?.departed_at || null, board: g?.board || 0, alight: g?.alight || 0 }; });
+    ST = { logId, vid: v.id, code: v.code, date: TRIP.date, qc: qq.queue_code, no: t.no, time: t.time, origin: t.origin, rows };
+    lsSet(SKEY, ST); $("sheet").hidden = true; location.hash = "#tripstops";
+  } catch (e) { toast(/trip_stops/.test(errMsg(e)) ? "ระบบบันทึกผู้โดยสารยังไม่เปิดใช้ (รอรัน SQL trip_stops)" : "เปิดไม่ได้: " + errMsg(e)); }
+}
+async function flushStops() {
+  const qd = lsGet(QKEY) || []; if (!qd.length) return 0;
+  const left = [];
+  for (const r of qd) { const { error } = await sb.from("trip_stops").upsert(r, { onConflict: "trip_log_id,seq" }); if (error) left.push(r); }
+  lsSet(QKEY, left.length ? left : null); return qd.length - left.length;
+}
+window.addEventListener("online", () => flushStops().then((n) => n && toast(`ส่งข้อมูลผู้โดยสารที่ค้าง ${n} จุดแล้ว`)));
+async function saveStop(r) {
+  const row = { trip_log_id: ST.logId, work_date: ST.date, vehicle_id: ST.vid, seq: r.seq, stop: r.stop, arrived_at: r.arrived_at, departed_at: r.departed_at, board: r.board, alight: r.alight, updated_at: new Date().toISOString() };
+  lsSet(SKEY, ST);
+  const { error } = await sb.from("trip_stops").upsert(row, { onConflict: "trip_log_id,seq" });
+  if (error) { const qd = (lsGet(QKEY) || []).filter((x) => !(x.trip_log_id === row.trip_log_id && x.seq === row.seq)); qd.push(row); lsSet(QKEY, qd); toast("ไม่มีสัญญาณ บันทึกไว้ในเครื่องแล้ว จะส่งให้อัตโนมัติ"); }
+}
+async function tripStops() {
+  if (!ST) ST = lsGet(SKEY);
+  if (!ST) { location.hash = "#trip"; return; }
+  flushStops();
+  const R = ST.rows, cur = R.findIndex((r, i) => (i === R.length - 1 ? !r.arrived_at : !r.departed_at));
+  const tb = R.reduce((s, r) => s + r.board, 0), ta = R.reduce((s, r) => s + r.alight, 0), onboard = tb - ta;
+  const hm = (ts) => (ts ? tHM(ts) : "–");
+  main().innerHTML = `<section class="card"><div class="row1"><b>${ST.code} · ${ST.qc === "R2" ? "รอบที่ " + ST.no : "เที่ยว " + ST.no} · ${ST.time} น.</b><span class="pill ${cur < 0 ? "ok" : "warn"}">${cur < 0 ? "จบเที่ยว" : "กำลังวิ่ง"}</span></div>
+     <p class="sm" style="margin:4px 0 0">ออกจาก${esc(ST.origin)} · ${bk(ST.date)}</p></section>
+   <section class="sum"><div class="tile"><small>ขึ้นรวม</small><b class="num">${tb}</b><span>คน</span></div><div class="tile"><small>ลงรวม</small><b class="num">${ta}</b><span>คน</span></div><div class="tile ${onboard < 0 ? "alert" : ""}"><small>บนรถตอนนี้</small><b class="num">${onboard}</b><span>คน</span></div></section>
+   <p class="notice" style="margin-top:10px">บันทึกเฉพาะตอนรถจอดสนิทแล้วเท่านั้น ห้ามใช้โทรศัพท์ขณะขับ</p>
+   <div class="list" style="margin-top:10px">${R.map((r, i) => i === cur ? stopCard(r, i, i === R.length - 1) : `<button class="day" data-st="${i}" style="text-align:left;cursor:pointer;opacity:${i > cur && cur >= 0 ? ".55" : "1"};border-left:4px solid ${r.departed_at || (i === R.length - 1 && r.arrived_at) ? "#3fa725" : "transparent"}">
+       <div class="d"><b class="num">${i + 1}</b><small>${hm(r.arrived_at)}</small></div><div class="sm">${esc(r.stop)}${r.arrived_at ? `<em class="sub2">จอด ${hm(r.arrived_at)} · ออก ${hm(r.departed_at)} · ขึ้น ${r.board} ลง ${r.alight}</em>` : ""}</div></button>`).join("")}</div>
+   <div style="display:grid;gap:8px;margin-top:12px">${cur < 0 ? `<a class="btn block pri" href="#trip">✓ จบเที่ยว กลับไปรายการเที่ยว</a>` : `<a class="btn block" href="#trip">กลับไปรายการเที่ยว (บันทึกไว้แล้ว)</a>`}</div>`;
+  main().querySelectorAll("[data-st]").forEach((b) => (b.onclick = () => editStop(+b.dataset.st)));
+  bindStopCard(cur);
+}
+function stopCard(r, i, last) {
+  const ctr = (k, l) => `<div style="flex:1"><small class="sm">${l}</small><div style="display:flex;align-items:center;gap:6px;margin-top:4px"><button class="btn" data-dec="${k}" style="min-width:52px;min-height:52px;font-size:1.4rem">−</button><b class="num" id="c_${k}" style="font-size:1.8rem;min-width:44px;text-align:center">${r[k]}</b><button class="btn pri" data-inc="${k}" style="min-width:52px;min-height:52px;font-size:1.4rem">+</button></div></div>`;
+  return `<section class="card" style="border-color:#1fc2ff"><div class="row1"><b>${i + 1}. ${esc(r.stop)}</b><span class="sm">${r.arrived_at ? "จอด " + tHM(r.arrived_at) + " น." : "ยังไม่ถึง"}</span></div>
+    ${r.arrived_at ? `<div style="display:flex;gap:12px;margin-top:10px">${i === 0 ? "" : ctr("alight", "ลง")}${last ? "" : ctr("board", "ขึ้น")}</div>
+      <button class="btn block pri" id="sGo" style="margin-top:12px;min-height:54px">${last ? "ถึงปลายทาง · จบเที่ยว" : "ออกจากจุดนี้ →"}</button>`
+    : `<button class="btn block pri" id="sArr" style="margin-top:10px;min-height:54px">ถึงจุดนี้แล้ว (ลงเวลาจอด)</button>`}</section>`;
+}
+function bindStopCard(cur) {
+  if (cur < 0) return;
+  const r = ST.rows[cur], last = cur === ST.rows.length - 1;
+  if ($("sArr")) $("sArr").onclick = async () => { r.arrived_at = new Date().toISOString(); if (last) { await saveStop(r); toast("จบเที่ยวแล้ว"); } else await saveStop(r); tripStops(); };
+  main().querySelectorAll("[data-inc]").forEach((b) => (b.onclick = () => { const k = b.dataset.inc; r[k] = Math.min(200, r[k] + 1); $("c_" + k).textContent = r[k]; lsSet(SKEY, ST); }));
+  main().querySelectorAll("[data-dec]").forEach((b) => (b.onclick = () => { const k = b.dataset.dec; r[k] = Math.max(0, r[k] - 1); $("c_" + k).textContent = r[k]; lsSet(SKEY, ST); }));
+  if ($("sGo")) $("sGo").onclick = async () => { if (!last) r.departed_at = new Date().toISOString(); await saveStop(r); tripStops(); };
+}
+function editStop(i) {
+  const r = ST.rows[i], s = $("sheet");
+  s.innerHTML = `<div class="in"><div class="sh"><b>แก้ไข ${i + 1}. ${esc(r.stop)}</b><button class="lnk" id="shX">ปิด</button></div>
+    <div class="grid"><div class="fld"><label for="eB">ขึ้น (คน)</label><input id="eB" type="number" inputmode="numeric" min="0" max="200" value="${r.board}"></div><div class="fld"><label for="eA">ลง (คน)</label><input id="eA" type="number" inputmode="numeric" min="0" max="200" value="${r.alight}"></div></div>
+    <button class="btn block pri" id="eOk" style="margin-top:10px">บันทึก</button></div>`;
+  s.hidden = false; $("shX").onclick = () => (s.hidden = true);
+  $("eOk").onclick = async () => { r.board = Math.max(0, Math.min(200, +$("eB").value || 0)); r.alight = Math.max(0, Math.min(200, +$("eA").value || 0)); if (!r.arrived_at) r.arrived_at = new Date().toISOString(); s.hidden = true; await saveStop(r); tripStops(); };
+}
+window.tripStops = tripStops;
+
+/* passenger statistics for the monthly report */
+const SLOT = (hm) => { const m = minsOf(hm); return m <= minsOf("08:40") ? "am" : m >= minsOf("17:00") ? "pm" : "off"; };
+async function paxStats(a, b) {
+  const [S, L] = await Promise.all([q(sb.from("trip_stops").select("*").gte("work_date", a).lte("work_date", b)).catch(() => null), tl(sb.from("trip_logs").select("id,vehicle_id,work_date,scheduled_time,origin,queue_code").gte("work_date", a).lte("work_date", b))]);
+  if (!S) return null;
+  const LG = Object.fromEntries(L.map((l) => [l.id, l])), code = (id) => vcode(id);
+  const byDay = {}, byStop = {}, bySlot = { am: 0, off: 0, pm: 0 }, byTime = {}, byCar = {};
+  S.forEach((s) => {
+    const l = LG[s.trip_log_id]; if (!l) return; const c = code(s.vehicle_id), t = String(l.scheduled_time).slice(0, 5), dir = l.queue_code === "R2" ? "R2" : l.origin === ORIGIN.C ? "CC" : "LOT";
+    byDay[s.work_date] = byDay[s.work_date] || {}; byDay[s.work_date][c] = (byDay[s.work_date][c] || 0) + s.board;
+    const k = dir + "|" + s.stop; byStop[k] = (byStop[k] || 0) + s.board;
+    if (dir !== "R2") { bySlot[SLOT(t)] += s.board; byTime[t] = byTime[t] || {}; byTime[t][c] = (byTime[t][c] || 0) + s.board; }
+    byCar[c] = (byCar[c] || 0) + s.board;
+  });
+  return { byDay, byStop, bySlot, byTime, byCar, total: Object.values(byCar).reduce((x, y) => x + y, 0), n: S.length };
+}
+const STOP_ORD = ["CC|" + P_CC, "CC|" + P_B2, "CC|" + P_B1, "LOT|" + P_LOT, "LOT|" + P_B2, "LOT|" + P_B1, ...R2_STOPS[1].map((x) => "R2|" + x)];
+const stopOrder = (o) => Object.entries(o).filter(([, n]) => n > 0).sort((x, y) => { const a = STOP_ORD.indexOf(x[0]), b = STOP_ORD.indexOf(y[0]); return (a < 0 ? 99 : a) - (b < 0 ? 99 : b); });
+window.paxStats = paxStats;
 
 window.tripPage = tripPage;
 window.tripReport = tripReport;

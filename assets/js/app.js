@@ -97,7 +97,7 @@ const NAV = () => [
 function drawNav() {
   $("nav").innerHTML = NAV().map(([k, l, p]) => `<a href="#${k}" data-k="${k}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${p}</svg>${l}</a>`).join("");
 }
-const PAGES = { home, schedule, inspect, charge, maint, vehicle, report, account, password, trip: () => window.tripPage(), tripreport: () => window.tripReport(), pdf: () => (window.pdfPage ? window.pdfPage() : Promise.reject(new Error("โหลดหน้าเอกสารไม่สำเร็จ ลองเปิดแอพใหม่"))) };
+const PAGES = { home, schedule, inspect, charge, maint, vehicle, report, account, password, trip: () => window.tripPage(), tripstops: () => window.tripStops(), tripreport: () => window.tripReport(), pdf: () => (window.pdfPage ? window.pdfPage() : Promise.reject(new Error("โหลดหน้าเอกสารไม่สำเร็จ ลองเปิดแอพใหม่"))) };
 function route() {
   let k = (location.hash || "#home").slice(1);
   if (PROFILE.must_change_password && k !== "password") k = "password";
@@ -105,7 +105,7 @@ function route() {
   if (k === "report" && !isMgr()) k = "home";
   document.querySelectorAll("#nav a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.k === k) || a.setAttribute("aria-current", a.dataset.k === k ? "page" : "false"));
   document.querySelectorAll("#nav a").forEach((a) => { if (a.dataset.k === k) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
-  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", pdf: "ตารางงาน (PDF)", trip: "รายงานรอบเดินรถ", tripreport: "รายงานรอบเดินรถประจำเดือน", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
+  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", pdf: "ตารางงาน (PDF)", trip: "รายงานรอบเดินรถ", tripstops: "บันทึกผู้โดยสาร", tripreport: "รายงานรอบเดินรถประจำเดือน", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
   scrollTo(0, 0);
   loading();
   PAGES[k]().catch((e) => (main().innerHTML = `<p class="err">${esc(errMsg(e))}</p>`));
