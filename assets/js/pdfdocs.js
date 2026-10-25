@@ -18,12 +18,13 @@ async function pdfPage() {
   // default: the period that is running; from the 21st on, the next period (schedules are prepared ahead)
   if (!pdfMonth) { const t = dObj(today()); if (t.getDate() >= 21 && t.getDate() <= 25) t.setDate(26); pdfMonth = periodOf(iso(t)); }
   const mgr = isMgr();
-  if (!mgr) { pdfDoc = "person"; pdfEmp = ME.employee?.id || null; }
+  if (window.pdfDocWant) { pdfDoc = window.pdfDocWant; window.pdfDocWant = null; }
+  if (!mgr) { if (!["person", "cert"].includes(pdfDoc)) pdfDoc = "person"; pdfEmp = ME.employee?.id || null; }
   if (!pdfDoc) pdfDoc = "fleet";
   const emps = mgr ? await q(sb.from("employees").select("*").in("kind", ["regular", "relief", "spare"]).order("code")) : ME.employee ? [await q(sb.from("employees").select("*").eq("id", ME.employee.id).single())] : [];
-  if (pdfDoc === "person" && !pdfEmp && emps.length) pdfEmp = emps[0].id;
-  const tabs = mgr ? `<div class="tabs2">${[["fleet", "ตารางรวมทั้งรอบ"], ["sheet", "ตารางเข้าปฏิบัติงาน"], ["person", "แยกรายคน"]].map(([k, l]) => `<button data-doc="${k}" aria-selected="${pdfDoc === k}">${l}</button>`).join("")}</div>` : "";
-  const picker = pdfDoc === "person" && mgr ? `<div class="fld" style="margin-top:10px"><label for="pEmp">พนักงานขับรถ</label><select id="pEmp">${emps.map((e) => `<option value="${e.id}" ${e.id === pdfEmp ? "selected" : ""}>${esc(e.full_name)}</option>`).join("")}</select></div>` : "";
+  if (["person", "cert"].includes(pdfDoc) && !pdfEmp && emps.length) pdfEmp = emps[0].id;
+  const tabs = `<div class="tabs2">${(mgr ? [["fleet", "ตารางรวมทั้งรอบ"], ["sheet", "ตารางเข้าปฏิบัติงาน"], ["person", "แยกรายคน"], ["cert", "ใบรับรองเวลา/การใช้รถ"]] : [["person", "ตารางงานของฉัน"], ["cert", "ใบรับรองเวลา/การใช้รถ"]]).map(([k, l]) => `<button data-doc="${k}" aria-selected="${pdfDoc === k}">${l}</button>`).join("")}</div>`;
+  const picker = ["person", "cert"].includes(pdfDoc) && mgr ? `<div class="fld" style="margin-top:10px"><label for="pEmp">พนักงานขับรถ</label><select id="pEmp">${emps.map((e) => `<option value="${e.id}" ${e.id === pdfEmp ? "selected" : ""}>${esc(e.full_name)}</option>`).join("")}</select></div>` : "";
   main().innerHTML = `<div class="wk"><button id="pPrev" aria-label="รอบก่อน">‹</button><div>${periodLabel(pdfMonth)}<small>${periodSpan(pdfMonth)}</small></div><button id="pNext" aria-label="รอบถัดไป">›</button></div>
    ${tabs}${picker}
    <div class="acts" style="display:flex;gap:8px;margin-top:12px"><button class="btn block" id="pMake">สร้าง PDF</button></div>
@@ -36,13 +37,22 @@ async function pdfPage() {
   if (!emps.length) { $("docWrap").innerHTML = `<div class="empty"><b>ไม่พบข้อมูลพนักงานของบัญชีนี้</b>ติดต่อผู้จัดการ</div>`; $("pMake").disabled = true; return; }
 
   const [a, b] = periodRange(pdfMonth), days = periodDays(pdfMonth);
-  const ws = await q(sb.from("work_schedules").select("*").gte("work_date", a).lte("work_date", b).in("employee_id", pdfDoc === "person" ? [pdfEmp] : emps.map((e) => e.id)).order("work_date"));
+  const ws = await q(sb.from("work_schedules").select("*").gte("work_date", a).lte("work_date", b).in("employee_id", ["person", "cert"].includes(pdfDoc) ? [pdfEmp] : emps.map((e) => e.id)).order("work_date"));
   let pages, land = false, fname;
   const tag = `${pdfMonth.getFullYear() + 543}-${String(pdfMonth.getMonth() + 1).padStart(2, "0")}`;
   if (pdfDoc === "fleet") { pages = docFleet(days, ws, emps); fname = `MRTA_ตารางคิวรถและพนักงานขับรถ_รอบ${tag}.pdf`; }
   else if (pdfDoc === "sheet") { pages = [docSheet(days, ws, emps)]; land = true; fname = `MRTA_ตารางเข้าปฏิบัติงาน_รอบ${tag}.pdf`; }
+  else if (pdfDoc === "cert") {
+    const e = emps.find((x) => x.id === pdfEmp);
+    const shifts = await q(sb.from("work_shifts").select("*").eq("employee_id", pdfEmp).gte("work_date", a).lte("work_date", b)).catch(() => null);
+    const vids = [...new Set(ws.filter((r) => r.vehicle_id).map((r) => r.vehicle_id).concat(e.home_vehicle_id ? [e.home_vehicle_id] : []))];
+    const ch = vids.length ? await q(sb.from("charging_records").select("vehicle_id,receipt_date,total").in("vehicle_id", vids).gte("receipt_date", a).lte("receipt_date", b)).catch(() => []) : [];
+    pages = [docCert(days, ws, e, shifts || [], ch)]; fname = `MRTA_ใบรับรองเวลาปฏิบัติงาน_${e.full_name.split(" ")[0]}_รอบ${tag}.pdf`;
+    if (!shifts) $("pMsg").innerHTML = `<b>ระบบลงเวลาเข้า-ออกงานยังไม่เปิดใช้</b> (รอรัน SQL work_shifts) ช่องเวลา/เลขไมล์/แบตจะว่าง`;
+    if (mgr && shifts) setTimeout(() => certEditor(days, ws, e, shifts), 0);
+  }
   else { const e = emps.find((x) => x.id === pdfEmp); pages = [docPerson(days, ws, e)]; fname = `MRTA_ตารางงาน_${e.full_name.split(" ")[0]}_รอบ${tag}.pdf`; }
-  if (!ws.length) $("pMsg").innerHTML = `<b>ยังไม่มีตารางงานของรอบนี้</b> เอกสารจะว่าง`;
+  if (!ws.length && pdfDoc !== "cert") $("pMsg").innerHTML = `<b>ยังไม่มีตารางงานของรอบนี้</b> เอกสารจะว่าง`;
   const W = land ? 1123 : 794, H = land ? 794 : 1123;
   const html = pages.map((p) => `<section class="dpg" style="width:${W}px;height:${H}px">${p}</section>`).join("");
   const wrap = $("docWrap"); wrap.innerHTML = `<div class="docscale"><div class="doc" id="docEl" style="width:${W}px">${html}</div></div>`;
@@ -162,4 +172,62 @@ function docPerson(days, ws, e) {
    ${dSign(["พนักงานขับรถ", "ผู้จัดการ"])}${dFoot(1, 1)}`;
 }
 
+/* ---------- แบบบันทึกรับรองเวลาปฏิบัติงานและการใช้รถ (per driver, period 26–25) ---------- */
+const hmBkk = (ts) => (ts ? tHM(ts).replace(":", ".") : "");
+const hrs = (a, b) => (a && b ? (new Date(b) - new Date(a)) / 36e5 : 0);
+function docCert(days, ws, e, shifts, ch) {
+  const S = Object.fromEntries(shifts.map((x) => [x.work_date, x])), W = Object.fromEntries(ws.map((x) => [x.work_date, x]));
+  const homeV = e.home_vehicle_id ? vcode(e.home_vehicle_id) : "";
+  const routeOf = (c) => (c === "STC-03" ? "MRT อิสรภาพ – รพ.ศิริราช" : c ? "ลานจอด รฟม. – อาคารจอดรถศูนย์วัฒนธรรมฯ" : "");
+  let nWork = 0, nOff = 0, ot = 0;
+  const rows = days.map((d) => {
+    const sh = S[d], w = W[d], vid = sh?.vehicle_id || w?.vehicle_id, c = vid ? vcode(vid) : "";
+    const st = w?.status, off = st === "off" || st === "leave";
+    if (sh?.clock_in || st === "work") nWork++; else if (off) nOff++;
+    ot += Number(sh?.ot_hours || 0);
+    const amt = ch.filter((x) => x.vehicle_id === vid && x.receipt_date === d).map((x) => fmt(x.total));
+    const note = [st === "off" ? "หยุด" : st === "leave" ? "ลา" + (w.leave_type ? " (" + esc(w.leave_type) + ")" : "") : "", (w?.note || "").includes("แทน") ? `ขับแทน ${c}` : c && homeV && c !== homeV ? `ขับ ${c}` : "", st === "standby" && !c ? "สำรอง" : "", sh?.ot_hours ? `OT ${sh.ot_hours} ชม.` : "", esc(sh?.note || "")].filter(Boolean).join(" · ");
+    return `<tr class="${off ? "offr" : ""}"><td class="c">${dObj(d).getDate()}</td><td>${off && !sh?.clock_in ? `<b class="offt">${st === "off" ? "หยุด" : "ลา"}</b>` : hmBkk(sh?.clock_in)}</td><td>${hmBkk(sh?.clock_out)}</td><td class="r">${sh?.odo_start ?? ""}</td><td class="r">${sh?.odo_end ?? ""}</td><td class="r">${sh?.soc_start != null ? sh.soc_start + "%" : ""}</td><td class="r">${sh?.soc_end != null ? sh.soc_end + "%" : ""}</td><td class="r">${amt.join(" + ")}</td><td class="nt">${note}</td></tr>`;
+  }).join("");
+  const kmTot = shifts.reduce((s, x) => s + (x.odo_end != null && x.odo_start != null ? Math.max(0, x.odo_end - x.odo_start) : 0), 0);
+  const p = (pdfMonth.getMonth() + 11) % 12;
+  return `<div class="ch"><img src="assets/img/smart-terminal-logo.png" alt=""><h1>แบบบันทึกรับรองเวลาปฏิบัติงานและการใช้รถ</h1></div>
+   <div class="cf"><span>ประจำเดือน <b>${MONTH[pdfMonth.getMonth()]}</b></span><span>พ.ศ. <b>${pdfMonth.getFullYear() + 543}</b></span><span>สังกัด/แผนก <b>พัฒนาธุรกิจ</b></span><span>โครงการ <b>รถบัสไฟฟ้า MRT</b></span></div>
+   <div class="cf"><span>ชื่อ-นามสกุล พนักงาน <b>${esc(e.full_name)}</b></span><span>รหัสพนักงาน <b>${esc(e.emp_no || "รอข้อมูล")}</b></span></div>
+   <div class="cf"><span>หมายเลขรถบัสประจำ <b>${homeV || (e.kind === "relief" ? "ขับได้ทุกคัน" : "ตามรถว่าง")}</b></span><span>เส้นทางวิ่งประจำ <b>${routeOf(homeV) || "ตามตารางงาน"}</b></span></div>
+   <div class="cbar">บันทึกการปฏิบัติงานประจำวัน (วันที่ 26 ${MONTH[p]} ${new Date(pdfMonth.getFullYear(), pdfMonth.getMonth() - 1, 1).getFullYear() + 543} ถึง 25 ${MONTH[pdfMonth.getMonth()]} ${pdfMonth.getFullYear() + 543})</div>
+   <table class="ct"><thead><tr><th rowspan="2" style="width:34px">วันที่</th><th colspan="2">เวลาเข้า - ออกงาน</th><th colspan="2">เลขไมล์ (กม.)</th><th colspan="2">ระดับแบตเตอรี่ (%)</th><th rowspan="2" style="width:118px">รวมการชาร์จ<br>แบตเตอรี่ (บาท)</th><th rowspan="2">หมายเหตุ</th></tr>
+   <tr><th>เข้า</th><th>ออก</th><th>เริ่ม</th><th>กลับ</th><th>เริ่ม</th><th>กลับ</th></tr></thead><tbody>${rows}</tbody></table>
+   <div class="cs"><div><div class="cbar sm">สรุปการปฏิบัติงานประจำเดือน</div><ul><li>จำนวนวันทำงานปกติ <b>${nWork}</b> วัน</li><li>จำนวนวันหยุด/ลากิจ/ลาป่วย <b>${nOff}</b> วัน</li><li>รวมชั่วโมงการทำงานล่วงเวลา (OT) <b>${ot || "–"}</b> ชั่วโมง</li><li>ระยะทางรวม <b>${kmTot ? kmTot.toLocaleString("th-TH") : "–"}</b> กม.</li></ul></div>
+   <div><div class="cbar sm">เงื่อนไขและข้อรับรอง</div><ol><li>พนักงานต้องลงเวลาตามความเป็นจริง และนำรถเข้าชาร์จ/ตรวจเช็กแบตเตอรี่ตามระเบียบก่อนส่งมอบงานทุกครั้ง</li><li>การปฏิบัติงานล่วงเวลา (OT) ต้องได้รับความเห็นชอบจากผู้ควบคุมงานก่อนเริ่มปฏิบัติงานจริงเท่านั้น</li></ol></div></div>
+   <div class="cbar">ส่วนการรับรองและอนุมัติ</div>
+   <div class="csg"><div><b>ผู้ขอรับรอง (พนักงานขับรถ)</b><p>ลงชื่อ ..................................</p><p>( ${esc(e.full_name)} )</p><p>ตำแหน่ง: พนักงานขับรถ</p><p>วันที่ ......../......../........</p></div>
+   <div><b>ผู้อนุมัติ (ผู้ควบคุมงาน)</b><p>ลงชื่อ ..................................</p><p>( .................................... )</p><p>ตำแหน่ง: ผู้ควบคุมงาน / หัวหน้างาน</p><p>วันที่ ......../......../........</p></div>
+   <div><b>ผู้ตรวจสอบ (ฝ่ายทรัพยากรบุคคล)</b><p>ลงชื่อ ..................................</p><p>( .................................... )</p><p>ตำแหน่ง: เจ้าหน้าที่ฝ่ายบุคคล</p><p>วันที่ ......../......../........</p></div></div>
+   <footer class="df"><span>ข้อมูลจากแอพ (ลงเวลาเข้า-ออกงาน · ตารางงาน · ใบเสร็จชาร์จ) ณ ${bk(today())} ${nowHM()} น.</span><span>หน้า 1/1</span></footer>`;
+}
+// managers: list of days to correct times / odometer / battery / OT
+function certEditor(days, ws, e, shifts) {
+  const S = Object.fromEntries(shifts.map((x) => [x.work_date, x]));
+  const box = document.createElement("section"); box.className = "card"; box.style.marginTop = "12px";
+  box.innerHTML = `<div class="row1"><b>แก้ไข/เพิ่ม บันทึกเวลา · ${esc(e.full_name)}</b></div><p class="sm" style="margin:4px 0 8px">แตะวันที่เพื่อแก้ไข หรือใส่ OT ที่อนุมัติ</p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${days.map((d) => `<button class="btn" data-ed="${d}" style="min-width:46px;padding:6px 8px;${S[d]?.clock_in ? "border-color:#3fa725" : ""}">${dObj(d).getDate()}</button>`).join("")}</div>`;
+  $("docWrap").after(box);
+  box.querySelectorAll("[data-ed]").forEach((b) => (b.onclick = () => shiftSheet(b.dataset.ed, e, S[b.dataset.ed], ws.find((x) => x.work_date === b.dataset.ed))));
+}
+function shiftSheet(d, e, sh, w) {
+  const s = $("sheet"), t = (ts) => (ts ? tHM(ts) : "");
+  s.innerHTML = `<div class="in"><div class="sh"><b>${esc(e.full_name.split(" ")[0])} · ${bk(d)}</b><button class="lnk" id="shX">ปิด</button></div>
+   <div class="grid"><div class="fld"><label for="zIn">เวลาเข้า</label><input id="zIn" type="time" value="${t(sh?.clock_in)}"></div><div class="fld"><label for="zOut">เวลาออก</label><input id="zOut" type="time" value="${t(sh?.clock_out)}"></div>
+   <div class="fld"><label for="zO1">ไมล์เริ่ม</label><input id="zO1" type="number" inputmode="decimal" value="${sh?.odo_start ?? ""}"></div><div class="fld"><label for="zO2">ไมล์กลับ</label><input id="zO2" type="number" inputmode="decimal" value="${sh?.odo_end ?? ""}"></div>
+   <div class="fld"><label for="zS1">แบตเริ่ม %</label><input id="zS1" type="number" inputmode="numeric" value="${sh?.soc_start ?? ""}"></div><div class="fld"><label for="zS2">แบตกลับ %</label><input id="zS2" type="number" inputmode="numeric" value="${sh?.soc_end ?? ""}"></div>
+   <div class="fld"><label for="zOt">OT ที่อนุมัติ (ชม.)</label><input id="zOt" type="number" step="0.5" inputmode="decimal" value="${sh?.ot_hours ?? ""}"></div><div class="fld"><label for="zN">หมายเหตุ</label><input id="zN" value="${esc(sh?.note || "")}"></div></div>
+   <button class="btn block pri" id="zOk" style="margin-top:10px">บันทึก</button></div>`;
+  s.hidden = false; $("shX").onclick = () => (s.hidden = true);
+  $("zOk").onclick = async () => {
+    const ts = (v) => (v ? new Date(`${d}T${v}:00+07:00`).toISOString() : null), num = (id) => ($(id).value === "" ? null : Number($(id).value));
+    const row = { work_date: d, employee_id: e.id, vehicle_id: sh?.vehicle_id || w?.vehicle_id || e.home_vehicle_id || null, clock_in: ts($("zIn").value), clock_out: ts($("zOut").value), odo_start: num("zO1"), odo_end: num("zO2"), soc_start: num("zS1"), soc_end: num("zS2"), ot_hours: num("zOt"), note: $("zN").value.trim() || null, updated_at: new Date().toISOString() };
+    try { await q(sb.from("work_shifts").upsert(row, { onConflict: "work_date,employee_id" })); s.hidden = true; toast("บันทึกแล้ว"); pdfPage(); } catch (err) { toast("บันทึกไม่สำเร็จ: " + errMsg(err)); }
+  };
+}
 window.pdfPage = pdfPage;

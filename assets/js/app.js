@@ -129,7 +129,7 @@ async function home() {
 async function homeDriver() {
   const vs = myVehicles();
   const claims = await q(sb.from("cover_claims").select("*").eq("work_date", ME.date));
-  let h = "";
+  let h = window.shiftCard ? await window.shiftCard() : "";
   const pend = claims.filter((c) => c.status === "pending" && c.relief_employee_id === ME.employee?.id);
   if (pend.length) h += `<p class="notice" style="margin-top:12px">รับรถแทนแล้ว รอผู้จัดการอนุมัติ ใช้รถได้ตามปกติ</p>`;
   const absent = claims.find((c) => c.absent_employee_id === ME.employee?.id && c.status !== "rejected");
@@ -234,6 +234,7 @@ const ACT = {
   account: `<a class="act" href="#account">${ic('<circle cx="12" cy="8" r="4"/><path d="M4.5 20c1.2-3.6 4-5.4 7.5-5.4s6.3 1.8 7.5 5.4"/>')}บัญชีผู้ใช้</a>`,
 };
 function bindHome() {
+  if (window.bindShift) window.bindShift();
   main().querySelectorAll("[data-decide]").forEach((b) => (b.onclick = async () => {
     b.disabled = true;
     try { await q(sb.rpc("decide_cover", { p_claim: b.dataset.decide, p_approve: b.dataset.ok === "1" })); toast(b.dataset.ok === "1" ? "อนุมัติแล้ว" : "ไม่อนุมัติแล้ว"); home(); }

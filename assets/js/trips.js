@@ -330,5 +330,49 @@ const STOP_ORD = ["CC|" + P_CC, "CC|" + P_B2, "CC|" + P_B1, "LOT|" + P_LOT, "LOT
 const stopOrder = (o) => Object.entries(o).filter(([, n]) => n > 0).sort((x, y) => { const a = STOP_ORD.indexOf(x[0]), b = STOP_ORD.indexOf(y[0]); return (a < 0 ? 99 : a) - (b < 0 ? 99 : b); });
 window.paxStats = paxStats;
 
+/* ---------- clock in / clock out (เวลาเข้า-ออกงาน + เลขไมล์ + แบต) on the driver home ---------- */
+let SHIFT = null;
+async function shiftCard() {
+  if (role() !== "DRIVER" || !ME.employee) return "";
+  const st = ME.schedule?.status; if (st === "off" || st === "leave") return "";
+  const r = await q(sb.from("work_shifts").select("*").eq("work_date", ME.date).eq("employee_id", ME.employee.id)).catch(() => null);
+  if (r === null) return "";
+  SHIFT = r[0] || null;
+  const t = (x) => (x ? tHM(x) : "");
+  if (!SHIFT?.clock_in) return `<button class="btn block pri" id="shIn" style="margin-top:12px;min-height:54px">🕒 ลงเวลาเข้างาน · เลขไมล์ · แบตเตอรี่</button>`;
+  if (!SHIFT.clock_out) return `<section class="card" style="margin-top:12px"><div class="row1"><b>เข้างาน ${t(SHIFT.clock_in)} น.</b><span class="pill ok">กำลังทำงาน</span></div><p class="sm" style="margin:4px 0 8px">ไมล์เริ่ม ${SHIFT.odo_start ?? "–"} · แบต ${SHIFT.soc_start ?? "–"}%</p><button class="btn block" id="shOut">ลงเวลาออกงาน · ไมล์กลับ · แบตกลับ</button></section>`;
+  const km = SHIFT.odo_end != null && SHIFT.odo_start != null ? SHIFT.odo_end - SHIFT.odo_start : null;
+  return `<p class="notice ok" style="margin-top:12px">วันนี้ เข้า ${t(SHIFT.clock_in)} · ออก ${t(SHIFT.clock_out)} น.${km != null ? ` · ${km} กม.` : ""} · <a href="#pdf" id="shCert">ใบรับรองเวลา</a></p>`;
+}
+function bindShift() {
+  if ($("shIn")) $("shIn").onclick = () => shiftForm("in");
+  if ($("shOut")) $("shOut").onclick = () => shiftForm("out");
+  if ($("shCert")) $("shCert").onclick = () => { window.pdfDocWant = "cert"; };
+}
+async function shiftForm(kind) {
+  const vs = myVehicles(), vid = vs[0]?.id || null;
+  let pre = { odo: "", soc: "" };
+  if (kind === "in" && vid) { const ins = await q(sb.from("inspections").select("soc,odometer,inspected_at").eq("vehicle_id", vid).gte("inspected_at", ME.date + "T00:00:00+07:00").order("inspected_at", { ascending: false }).limit(1)).catch(() => []); if (ins[0]) pre = { odo: ins[0].odometer ?? "", soc: ins[0].soc ?? "" }; }
+  const s = $("sheet");
+  s.innerHTML = `<div class="in"><div class="sh"><b>${kind === "in" ? "ลงเวลาเข้างาน" : "ลงเวลาออกงาน"} · ${nowHM()} น.</b><button class="lnk" id="shX">ปิด</button></div>
+    <p class="sm" style="margin:0 0 8px">${vs[0] ? vs[0].code + " · " : ""}${bk(ME.date)} · เวลาบันทึกตามเวลาที่กด</p>
+    <div class="grid"><div class="fld"><label for="fOdo">เลขไมล์${kind === "in" ? "เริ่ม" : "กลับ"} (กม.)</label><input id="fOdo" type="number" inputmode="decimal" value="${pre.odo}"></div>
+    <div class="fld"><label for="fSoc">แบตเตอรี่${kind === "in" ? "เริ่ม" : "กลับ"} (%)</label><input id="fSoc" type="number" inputmode="numeric" min="0" max="100" value="${pre.soc}"></div></div>
+    ${kind === "out" ? `<div class="fld" style="margin-top:8px"><label for="fNote">หมายเหตุ (ถ้ามี)</label><input id="fNote" placeholder="เช่น ลิฟท์ยกวีลแชร์มีเสียง"></div>` : ""}
+    <button class="btn block pri" id="fOk" style="margin-top:10px;min-height:52px">บันทึก</button></div>`;
+  s.hidden = false; $("shX").onclick = () => (s.hidden = true);
+  $("fOk").onclick = async () => {
+    const odo = $("fOdo").value === "" ? null : Number($("fOdo").value), soc = $("fSoc").value === "" ? null : Number($("fSoc").value);
+    if (soc != null && (soc < 0 || soc > 100)) { toast("แบตเตอรี่ต้องอยู่ระหว่าง 0–100%"); return; }
+    if (kind === "out" && odo != null && SHIFT?.odo_start != null && odo < SHIFT.odo_start) { toast("เลขไมล์กลับน้อยกว่าเลขไมล์เริ่ม ตรวจสอบอีกครั้ง"); return; }
+    const row = kind === "in" ? { work_date: ME.date, employee_id: ME.employee.id, vehicle_id: vid, clock_in: new Date().toISOString(), odo_start: odo, soc_start: soc }
+      : { work_date: ME.date, employee_id: ME.employee.id, vehicle_id: SHIFT?.vehicle_id || vid, clock_in: SHIFT?.clock_in || null, odo_start: SHIFT?.odo_start ?? null, soc_start: SHIFT?.soc_start ?? null, clock_out: new Date().toISOString(), odo_end: odo, soc_end: soc, note: ($("fNote")?.value || "").trim() || null };
+    row.updated_at = new Date().toISOString();
+    try { await q(sb.from("work_shifts").upsert(row, { onConflict: "work_date,employee_id" })); s.hidden = true; toast(kind === "in" ? "ลงเวลาเข้างานแล้ว" : "ลงเวลาออกงานแล้ว"); home(); }
+    catch (e) { toast("บันทึกไม่สำเร็จ: " + errMsg(e)); }
+  };
+}
+window.shiftCard = shiftCard; window.bindShift = bindShift;
+
 window.tripPage = tripPage;
 window.tripReport = tripReport;

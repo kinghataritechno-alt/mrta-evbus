@@ -231,3 +231,11 @@ table.t tr:last-child td{border-bottom:0}
 a.btn{text-decoration:none;display:flex;align-items:center;justify-content:center}
 .notice.ok{border-color:rgba(120,230,100,.45);background:rgba(60,170,60,.1);color:#c9ffb8}.notice.ok a{color:#fff}
 .doc .dtb.xs{font-size:10.5px}.doc .dtb.xs td{padding:1.4px 5px}.doc .dtb.xs th{padding:3px 5px}
+
+.doc .ch{display:flex;align-items:center;gap:14px;padding-top:22px}.doc .ch img{width:46px;height:46px}.doc .ch h1{margin:0;font-size:22px;color:#0f1b3d}
+.doc .cf{display:flex;flex-wrap:wrap;gap:4px 22px;font-size:12px;margin-top:6px}.doc .cf b{border-bottom:1px dotted #445;padding:0 6px;font-weight:600}
+.doc .cbar{background:#1b1f2a;color:#fff;font-weight:700;font-size:12.5px;padding:4px 10px;border-radius:4px 4px 0 0;margin-top:10px}.doc .cbar.sm{font-size:11.5px;margin-top:0}
+.doc .ct{font-size:10.5px;table-layout:fixed}.doc .ct th{background:#eef1f7;border:1px solid #9aa3b8;padding:2px 3px;font-weight:700}.doc .ct td{border:1px solid #9aa3b8;padding:1.6px 4px;height:17px;white-space:nowrap;overflow:hidden}
+.doc .ct td.nt{font-size:9.5px}.doc .ct tr.offr td{background:#f6f7fb}
+.doc .cs{display:flex;gap:12px;margin-top:8px;font-size:11px}.doc .cs>div{flex:1;border:1px solid #9aa3b8;border-radius:4px}.doc .cs ul,.doc .cs ol{margin:4px 0;padding-left:22px;line-height:1.55}
+.doc .csg{display:flex;gap:10px;font-size:11px;border:1px solid #9aa3b8;border-top:0;padding:6px 8px}.doc .csg>div{flex:1}.doc .csg p{margin:4px 0}
