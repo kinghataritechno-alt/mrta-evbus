@@ -103,7 +103,10 @@ function drawNav() {
 const PAGES = { home, schedule, inspect, charge, maint, vehicle, report, account, password, trip: () => window.tripPage(), tripstops: () => window.tripStops(), tripreport: () => window.tripReport(), pdf: () => (window.pdfPage ? window.pdfPage() : Promise.reject(new Error("โหลดหน้าเอกสารไม่สำเร็จ ลองเปิดแอพใหม่"))) };
 function route() {
   let k = (location.hash || "#home").slice(1);
-  if (PROFILE.must_change_password && k !== "password") k = "password";
+  // drivers and technicians keep the password the admin issued (decision 26 ต.ค. 2569): no forced change, no change page
+  const fixedPw = ["DRIVER", "MAINTENANCE"].includes(PROFILE.role);
+  if (fixedPw && k === "password") k = "account";
+  if (!fixedPw && PROFILE.must_change_password && k !== "password") k = "password";
   if (!PAGES[k]) k = "home";
   if (k === "report" && !isMgr()) k = "home";
   document.querySelectorAll("#nav a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.k === k) || a.setAttribute("aria-current", a.dataset.k === k ? "page" : "false"));
@@ -689,7 +692,7 @@ async function report() {
 /* ================= ACCOUNT / PASSWORD ================= */
 async function account() {
   main().innerHTML = `<section class="card" style="margin-top:16px"><dl class="kv"><dt>ชื่อผู้ใช้</dt><dd>${esc(PROFILE.username)}</dd><dt>ชื่อ</dt><dd>${esc(PROFILE.display_name)}</dd><dt>บทบาท</dt><dd>${ROLE_TH[PROFILE.role]}</dd>${ME.employee ? `<dt>ประเภท</dt><dd>${{ regular: "คนขับประจำ", relief: "คนขับแทน", spare: "คนขับสำรอง", manager: "ผู้จัดการ", technician: "ช่าง", admin: "ผู้ดูแลระบบ", customer: "ลูกค้า" }[ME.employee.kind]}</dd>` : ""}</dl></section>
-   <a class="btn block" href="#password" style="margin-top:12px">เปลี่ยนรหัสผ่าน</a><button class="btn danger block" id="out" style="margin-top:10px">ออกจากระบบ</button>
+   ${["DRIVER", "MAINTENANCE"].includes(PROFILE.role) ? `<p class="sm" style="margin-top:12px">ลืมรหัสผ่าน ติดต่อผู้ดูแลระบบ</p>` : `<a class="btn block" href="#password" style="margin-top:12px">เปลี่ยนรหัสผ่าน</a>`}<button class="btn danger block" id="out" style="margin-top:10px">ออกจากระบบ</button>
    <p class="sm" style="margin-top:16px">เพิ่มแอปลงหน้าจอมือถือ: iPhone กด แชร์ → เพิ่มไปยังหน้าจอโฮม · Android กด ⋮ → เพิ่มลงในหน้าจอหลัก</p>`;
   $("out").onclick = async () => { await sb.auth.signOut(); location.replace("index.html"); };
 }

@@ -184,7 +184,7 @@ form.addEventListener("submit", async e => {
     const { error: sErr } = await sb.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
     if (sErr) { show("เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่"); return; }
     show("เข้าสู่ระบบสำเร็จ", true);
-    location.href = data.must_change_password ? CONFIG.HOME_URL + "#password" : CONFIG.HOME_URL + "#home";
+    location.href = data.must_change_password && !["DRIVER", "MAINTENANCE"].includes(data.role) ? CONFIG.HOME_URL + "#password" : CONFIG.HOME_URL + "#home";
   } catch (err) {
     show("เชื่อมต่อระบบไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
   } finally {
