@@ -15,7 +15,8 @@ let pdfMonth = null, pdfDoc = null, pdfEmp = null, pdfBlob = null;
 function periodDays(m) { const [a, b] = periodRange(m), out = []; for (let t = dObj(a); iso(t) <= b; t.setDate(t.getDate() + 1)) out.push(iso(t)); return out; }
 
 async function pdfPage() {
-  if (!pdfMonth) pdfMonth = new Date((schedMonth || periodOf(today())).getTime());
+  // default: the period that is running; from the 21st on, the next period (schedules are prepared ahead)
+  if (!pdfMonth) { const t = dObj(today()); if (t.getDate() >= 21 && t.getDate() <= 25) t.setDate(26); pdfMonth = periodOf(iso(t)); }
   const mgr = isMgr();
   if (!mgr) { pdfDoc = "person"; pdfEmp = ME.employee?.id || null; }
   if (!pdfDoc) pdfDoc = "fleet";
@@ -94,8 +95,8 @@ const CARS = ["STC-01", "STC-02", "STC-03", "STC-04"];
 function docFleet(days, ws, emps) {
   const E = Object.fromEntries(emps.map((e) => [e.id, e]));
   const rowsQ = days.map((d) => {
-    const w = ws.filter((r) => r.work_date === d && r.status === "work");
-    const cells = CARS.map((c) => { const r = w.find((x) => vcode(x.vehicle_id) === c); return r ? `<td><span class="q">${esc(r.queue_code || "")}</span> ${String(r.first_time || "").slice(0, 5)} ${ori(r.first_origin)} <span class="n">· ${QTRIPS[r.queue_code] ?? ""}</span></td>` : `<td class="pk">จอด</td>`; }).join("");
+    const w = ws.filter((r) => r.work_date === d && r.status === "work"), empty = !ws.some((r) => r.work_date === d);
+    const cells = CARS.map((c) => { const r = w.find((x) => vcode(x.vehicle_id) === c); return r ? `<td><span class="q">${esc(r.queue_code || "")}</span> ${String(r.first_time || "").slice(0, 5)} ${ori(r.first_origin)} <span class="n">· ${QTRIPS[r.queue_code] ?? ""}</span></td>` : `<td class="pk">${empty ? "–" : "จอด"}</td>`; }).join("");
     return `<tr class="${isWE(d) ? "we" : ""}"><td class="c">${dnum(d)}</td><td>${DOW[dObj(d).getDay()]}</td>${cells}</tr>`;
   }).join("");
   const tot = Object.fromEntries(CARS.map((c) => [c, ws.filter((r) => r.status === "work" && vcode(r.vehicle_id) === c).reduce((s, r) => s + (QTRIPS[r.queue_code] || 0), 0)]));
@@ -106,8 +107,8 @@ function docFleet(days, ws, emps) {
    <table class="dtb"><thead><tr><th>วันที่</th><th>วัน</th>${CARS.map((c) => `<th><i style="background:${VHEX[c]}"></i>${c}</th>`).join("")}</tr></thead><tbody>${rowsQ}</tbody></table>
    <p class="dnote">ช่อง: รหัสคิว · เวลาออกรอบแรก · ต้นทาง · จำนวนเที่ยว · STC-03 = เส้น MRT อิสรภาพ – รพ.ศิริราช (R2 = 2 รอบ/วัน) · แถวสีฟ้า = เสาร์–อาทิตย์</p>${dFoot(1, 2)}`;
   const rowsD = days.map((d) => {
-    const w = ws.filter((r) => r.work_date === d);
-    const cells = CARS.map((c) => { const r = w.find((x) => x.status === "work" && vcode(x.vehicle_id) === c); if (!r) return `<td class="pk">จอด</td>`; const sub = (r.note || "").includes("แทน"); return `<td class="${sub ? "sub" : ""}">${first(E[r.employee_id]?.full_name)}${sub ? " (แทน)" : ""}</td>`; }).join("");
+    const w = ws.filter((r) => r.work_date === d), empty = !w.length;
+    const cells = CARS.map((c) => { const r = w.find((x) => x.status === "work" && vcode(x.vehicle_id) === c); if (!r) return `<td class="pk">${empty ? "–" : "จอด"}</td>`; const sub = (r.note || "").includes("แทน"); return `<td class="${sub ? "sub" : ""}">${first(E[r.employee_id]?.full_name)}${sub ? " (แทน)" : ""}</td>`; }).join("");
     const off = w.filter((r) => r.status === "off" || r.status === "leave").map((r) => first(E[r.employee_id]?.full_name) + (r.status === "leave" ? ` (${esc(r.leave_type || "ลา")})` : "")).join(", ") || "–";
     const sb2 = w.filter((r) => r.status === "standby").map((r) => first(E[r.employee_id]?.full_name)).join(", ");
     return `<tr class="${isWE(d) ? "we" : ""}"><td class="c">${dnum(d)}</td><td>${DOW[dObj(d).getDay()]}</td>${cells}<td class="off">${off}</td><td class="sbx">${sb2}</td></tr>`;
