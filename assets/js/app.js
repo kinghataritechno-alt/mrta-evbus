@@ -38,6 +38,8 @@ function errMsg(e) {
   if (/row-level security|permission denied/i.test(m)) return "ไม่มีสิทธิ์ทำรายการนี้";
   if (/duplicate key.*receipt_no/i.test(m)) return "เลขที่ใบเสร็จนี้เคยบันทึกแล้ว";
   if (/Failed to fetch|NetworkError/i.test(m)) return "เชื่อมต่ออินเทอร์เน็ตไม่ได้ ลองใหม่อีกครั้ง";
+  if (/mime type|not supported|invalid_mime/i.test(m)) return "ระบบยังไม่รับไฟล์ชนิดนี้ (รอเปิดรับ PDF) ลองแนบเป็นรูปภาพแทน";
+  if (/exceeded the maximum allowed size|Payload too large|413/i.test(m)) return "ไฟล์ใหญ่เกิน 10 MB";
   return m;
 }
 const busImg = (code) => `assets/img/${code}-thumb.jpg`;
@@ -59,8 +61,9 @@ function shrink(file, max = 1400, quality = 0.75) {
   });
 }
 async function upload(vehicleId, kind, blob, i = 0) {
-  const path = `${vehicleId}/${kind}/${today()}/${Date.now()}-${i}.jpg`;
-  const { error } = await sb.storage.from(CFG.bucket).upload(path, blob, { contentType: "image/jpeg", upsert: false });
+  const pdf = blob.type === "application/pdf", ext = pdf ? "pdf" : blob.type === "image/png" ? "png" : "jpg";
+  const path = `${vehicleId}/${kind}/${today()}/${Date.now()}-${i}.${ext}`;
+  const { error } = await sb.storage.from(CFG.bucket).upload(path, blob, { contentType: pdf ? "application/pdf" : blob.type === "image/png" ? "image/png" : "image/jpeg", upsert: false });
   if (error) throw error;
   return path;
 }
@@ -425,7 +428,9 @@ function drawCharge(vs, recent) {
     <div class="fld"><label for="cA">แบตก่อนชาร์จ (%)</label><input id="cA" class="big num" inputmode="numeric" maxlength="3"></div>
     <div class="fld"><label for="cB">แบตหลังชาร์จ (%)</label><input id="cB" class="big num" inputmode="numeric" maxlength="3"></div></div>
    <h2>ใบเสร็จการชาร์จ <small>จำเป็นต้องแนบ</small></h2>
-   <label class="btn block" style="min-height:${CH.url ? "auto" : "90px"};border-style:dashed">${CH.url ? `<img src="${CH.url}" alt="ใบเสร็จ" style="max-width:100%;max-height:300px;display:block">` : "ถ่ายภาพใบเสร็จ"}<input type="file" accept="image/*" capture="environment" id="cRc"></label>
+   <div style="display:grid;gap:8px">${CH.url ? (CH.pdf ? `<div class="card" style="display:flex;align-items:center;gap:10px"><span style="font-size:1.8rem">📄</span><div class="sm"><b>${esc(CH.name || "ใบเสร็จ.pdf")}</b><br>${(CH.blob.size / 1024).toFixed(0)} KB</div></div>` : `<img src="${CH.url}" alt="ใบเสร็จ" style="max-width:100%;max-height:300px;display:block;border-radius:10px">`) : ""}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label class="btn block" style="min-height:64px;border-style:dashed">📷 ถ่ายภาพใบเสร็จ<input type="file" accept="image/*" capture="environment" id="cRc" hidden></label>
+      <label class="btn block" style="min-height:64px;border-style:dashed">🖼️ เลือกรูป / ไฟล์ PDF<input type="file" accept="image/*,application/pdf" id="cRf" hidden></label></div></div>
    <div class="grid" style="margin-top:8px"><div class="fld"><label for="cNo">เลขที่ใบเสร็จ</label><input id="cNo" class="num" inputmode="numeric" placeholder="0069xxxxxxxx"></div>
     <div class="fld"><label for="cRef">เลขอ้างอิงการชาร์จ</label><input id="cRef" placeholder="EV69xxxxxxx"></div>
     <div class="fld"><label for="cK">พลังงาน (kWh)</label><input id="cK" class="big num" inputmode="decimal"></div>
@@ -439,7 +444,17 @@ function drawCharge(vs, recent) {
   if (!run) { $("startBtn").onclick = () => { setRun({ vid: CH.vid, start: nowHM(), date: today(), ms: Date.now() }); toast(`เริ่มชาร์จ ${vById(CH.vid).code} เวลา ${nowHM()} น.`); drawCharge(vs, recent); }; return; }
   const tick = () => { const m = Math.round((Date.now() - run.ms) / 60000); const el = $("dur"); if (el) el.textContent = `${Math.floor(m / 60)} ชม. ${m % 60} น.`; }; tick(); clearInterval(drawCharge.t); drawCharge.t = setInterval(tick, 30000);
   $("cancelRun").onclick = (e) => { const b = e.currentTarget; if (b.dataset.c !== "1") { b.dataset.c = "1"; b.textContent = "แตะอีกครั้งเพื่อยกเลิก"; return; } setRun(null); CH.blob = null; CH.url = null; drawCharge(vs, recent); };
-  $("cRc").onchange = async (e) => { const f = e.target.files[0]; if (!f) return; CH.blob = await shrink(f, 1600, 0.8); CH.url = CH.blob && URL.createObjectURL(CH.blob); const keep = readCharge(); drawCharge(vs, recent); writeCharge(keep); };
+  const pick = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+    let blob = null;
+    if (isPdf) { if (f.size > 10 * 1024 * 1024) { toast("ไฟล์ PDF ใหญ่เกิน 10 MB"); return; } blob = f; }
+    else { blob = await shrink(f, 1600, 0.8); if (!blob) { toast("เปิดรูปนี้ไม่ได้ ลองถ่ายภาพใหม่ หรือเลือกรูปแบบ JPG/PNG"); return; } }
+    if (CH.url) URL.revokeObjectURL(CH.url);
+    CH.blob = blob; CH.pdf = isPdf; CH.name = f.name; CH.url = URL.createObjectURL(blob);
+    const keep = readCharge(); drawCharge(vs, recent); writeCharge(keep);
+  };
+  $("cRc").onchange = pick; $("cRf").onchange = pick;
   ["cA", "cB"].forEach((id) => ($(id).oninput = (e) => (e.target.value = e.target.value.replace(/\D/g, ""))));
   ["cK", "cSub", "cVat", "cTot"].forEach((id) => ($(id).oninput = (e) => { e.target.value = e.target.value.replace(/[^\d.]/g, ""); chkCharge(); }));
   $("cSave").onclick = () => saveCharge(vs);
@@ -465,7 +480,7 @@ async function saveCharge(vs) {
     const startedAt = new Date(run.ms).toISOString(), endedAt = new Date().toISOString();
     const rec = { vehicle_id: CH.vid, employee_id: ME.employee?.id || null, started_at: startedAt, ended_at: endedAt, station: o.cSt.trim(), soc_before: a, soc_after: b, receipt_no: o.cNo.trim(), receipt_date: today(), ev_ref: o.cRef.trim() || null, kwh: k, unit_price: 7.0093, subtotal: parseFloat(o.cSub) || null, vat: parseFloat(o.cVat) || null, total: tot, receipt_path: path, source: "app" };
     await q(sb.from("charging_records").insert(rec));
-    setRun(null); CH.blob = null; CH.url = null;
+    setRun(null); CH.blob = null; CH.url = null; CH.pdf = false;
     const v = vById(rec.vehicle_id), endHM = nowHM();
     const text = `${v.code} (${v.plate}) ชาร์จไฟฟ้าเรียบร้อย\n${bk(today())} เวลา ${run.start}–${endHM} น.\nแบต ${a}% → ${b}% · ${fmt(k, 2)} kWh\nค่าไฟฟ้า ${fmt(tot)} บาท · ใบเสร็จ ${rec.receipt_no}\n${rec.station} · ${ME.employee?.name || PROFILE.display_name}`;
     main().innerHTML = `<section style="padding-top:20px;display:flex;flex-direction:column;gap:12px"><span class="pill ok" style="margin:0;align-self:flex-start">✓ บันทึกการชาร์จแล้ว</span>
