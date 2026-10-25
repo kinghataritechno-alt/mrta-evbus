@@ -1,0 +1,194 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<meta name="theme-color" content="#061436"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Smart Shuttle">
+<style>html,body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>
+</head><body>
+<title>Smart Shuttle Bus EV</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap">
+<style>
+/* Layout: one image-proportioned stage (941:1597) from the approved mockup — logo + STC-01 on the road; a clear frosted
+   glass card with the two fields and button sits over the road, footer below. Sized in container units so it tracks the photo. */
+:root{
+  --road:#2a4e7b;
+  --glass:rgba(255,255,255,.07);
+  --edge:rgba(120,205,255,.7);
+  --field:rgba(255,255,255,.07);
+  --field-line:rgba(235,244,255,.45);
+  --cyan:#1fc2ff;
+  --blue:#1a64ff;
+  --fg:#ffffff;
+  --danger:#ffd0d0;
+  --display:"Kanit","IBM Plex Sans Thai",system-ui,sans-serif;
+  --body:"IBM Plex Sans Thai","Sarabun",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{min-height:100%}
+body{margin:0;background:var(--road);color:var(--fg);font-family:var(--body);-webkit-font-smoothing:antialiased}
+
+.screen{container-type:inline-size;position:relative;width:100%;max-width:520px;margin:0 auto;
+  aspect-ratio:941/1597;background:var(--road) url("assets/img/login-bg.jpg") top center/100% auto no-repeat}
+
+.stack{position:absolute;left:5.6cqw;right:5.6cqw;top:111.3cqw;display:flex;flex-direction:column;gap:1.4cqw;padding-bottom:5cqw}
+
+.card{border:1.5px solid var(--edge);border-radius:4.9cqw;background:var(--glass);
+  box-shadow:0 0 2.6cqw rgba(60,170,255,.35),inset 0 1px 0 rgba(255,255,255,.25);
+  padding:6.9cqw 6.2cqw 4.5cqw;min-height:46.9cqw}
+
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+form{display:flex;flex-direction:column;gap:1.7cqw}
+.field{position:relative;display:flex;align-items:center;height:10.4cqw;min-height:42px;border-radius:3cqw;
+  background:var(--field);border:1px solid var(--field-line);transition:border-color .15s,box-shadow .15s}
+.field:focus-within{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(31,194,255,.3)}
+.field.invalid{border-color:#ff8a8a;box-shadow:0 0 0 3px rgba(255,120,120,.25)}
+.ico{flex:none;width:4.9cqw;height:4.9cqw;margin-left:3.6cqw;color:#fff}
+.field input{flex:1;min-width:0;height:100%;border:0;outline:0;background:transparent;color:var(--fg);
+  font:400 16px/1 var(--body);padding:0 2cqw 0 5cqw;text-shadow:0 1px 2px rgba(0,20,60,.35)}
+.field input::placeholder{color:rgba(255,255,255,.92)}
+.eye{flex:none;height:100%;aspect-ratio:1;margin-right:.4cqw;border:0;background:transparent;color:#fff;
+  display:grid;place-items:center;border-radius:2.6cqw;cursor:pointer}
+.eye svg{width:5.4cqw;height:5.4cqw}
+.eye:focus-visible{outline:2px solid var(--cyan);outline-offset:-4px}
+
+.hint{margin:-.4cqw .4cqw 0;font-size:max(13px,2.3cqw);color:#e8f1ff;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.msg{margin:0;border-radius:2.4cqw;padding:1.8cqw 2.6cqw;font-size:max(14px,2.5cqw);line-height:1.5;
+  background:rgba(120,10,20,.55);color:var(--danger);border:1px solid rgba(255,150,150,.5)}
+.msg.ok{background:rgba(20,90,30,.55);color:#c9ffb8;border-color:rgba(120,230,100,.5)}
+
+.submit{margin-top:.7cqw;height:10.5cqw;min-height:44px;border:0;border-radius:3.4cqw;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:2.8cqw;
+  font:500 max(16px,3.5cqw)/1 var(--display);color:#fff;
+  background:linear-gradient(90deg,var(--cyan),#1b8bff 55%,var(--blue));
+  box-shadow:0 0 2.6cqw rgba(31,160,255,.5),inset 0 1px 0 rgba(255,255,255,.3);transition:transform .1s,filter .15s}
+.submit:hover{filter:brightness(1.07)}
+.submit:active{transform:translateY(1px)}
+.submit:focus-visible{outline:3px solid #fff;outline-offset:3px}
+.submit[disabled]{filter:saturate(.6) brightness(.85);cursor:progress}
+.submit svg{width:5cqw;height:5cqw}
+.spin{width:4cqw;height:4cqw;border:3px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:r .8s linear infinite}
+@keyframes r{to{transform:rotate(360deg)}}
+
+footer{text-align:center;display:flex;flex-direction:column;gap:.5cqw;text-shadow:0 1px 3px rgba(0,25,70,.6)}
+footer .th{font-size:max(12px,2.2cqw)}
+footer .en{font-size:max(10px,1.95cqw);letter-spacing:.02em}
+
+@media (prefers-reduced-motion:reduce){.spin{animation-duration:2s}.submit,.field{transition:none}}
+</style>
+
+<div class="screen">
+  <div class="stack" role="main">
+    <section class="card" aria-labelledby="ttl">
+      <h1 id="ttl" class="sr">เข้าสู่ระบบ Smart Shuttle Bus EV</h1>
+      <form id="loginForm" novalidate>
+        <label class="field" id="fUser">
+          <span class="sr">ชื่อผู้ใช้</span>
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="12" cy="7.5" r="4.2"/><path d="M3.8 20.5c0-3.6 3.7-5.9 8.2-5.9s8.2 2.3 8.2 5.9c0 .5-.4.9-.9.9H4.7c-.5 0-.9-.4-.9-.9z"/></svg>
+          <input id="username" name="username" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="ชื่อผู้ใช้ (Username)" required>
+        </label>
+
+        <label class="field" id="fPass">
+          <span class="sr">รหัสผ่าน</span>
+          <svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 10V7.5a5 5 0 0 1 10 0V10h.5A1.5 1.5 0 0 1 19 11.5v8A1.5 1.5 0 0 1 17.5 21h-11A1.5 1.5 0 0 1 5 19.5v-8A1.5 1.5 0 0 1 6.5 10H7zm2 0h6V7.5a3 3 0 0 0-6 0V10z"/></svg>
+          <input id="password" name="password" type="password" autocomplete="current-password" placeholder="รหัสผ่าน (Password)" required>
+          <button type="button" class="eye" id="eye" aria-label="แสดงรหัสผ่าน" aria-pressed="false">
+            <svg id="eyeOff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><path d="M4 20 20 4"/></svg>
+            <svg id="eyeOn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" hidden><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </label>
+        <p class="hint" id="caps" hidden>Caps Lock เปิดอยู่</p>
+
+        <p class="msg" id="msg" role="alert" hidden></p>
+
+        <button class="submit" id="submit" type="submit">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12h16M13.5 6l6 6-6 6"/></svg>
+          <span>เข้าสู่ระบบ</span>
+        </button>
+      </form>
+    </section>
+
+    <footer>
+      <span class="th">ระบบบริหารจัดการรถโดยสารไฟฟ้า</span>
+      <span class="en">SMART TERMINAL CORPORATION CO., LTD.</span>
+    </footer>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+/* ===== CONFIG: fill in at deploy time. Use the publishable (anon) key only; never the service_role key. ===== */
+const CONFIG = {
+  SUPABASE_URL: "https://gxgiefixfpfbwiaftkdb.supabase.co",
+  SUPABASE_ANON_KEY: "sb_publishable_z7uItqnu_idS-uLr-ChxaQ_QaFO0c-j", // publishable key (safe in client)
+  LOGIN_FUNCTION: "username-login", // Edge Function: resolves username → account and signs in server-side
+  HOME_URL: "app.html"
+};
+
+const $ = id => document.getElementById(id);
+const form = $("loginForm"), user = $("username"), pass = $("password"),
+      msg = $("msg"), btn = $("submit"), caps = $("caps");
+const btnHTML = btn.innerHTML;
+if (window.supabase && CONFIG.SUPABASE_URL) { window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY).auth.getSession().then(({data}) => { if (data.session) location.replace(CONFIG.HOME_URL + "#home"); }); }
+
+const configured = !!(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY && window.supabase);
+const sb = configured ? window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY) : null;
+
+function show(text, ok){ msg.textContent = text; msg.classList.toggle("ok", !!ok); msg.hidden = false; }
+function clear(){ msg.hidden = true; $("fUser").classList.remove("invalid"); $("fPass").classList.remove("invalid"); }
+function busy(on){
+  btn.disabled = on; user.disabled = on; pass.disabled = on;
+  btn.innerHTML = on ? '<span class="spin" aria-hidden="true"></span><span>กำลังเข้าสู่ระบบ…</span>' : btnHTML;
+}
+
+$("eye").addEventListener("click", () => {
+  const showPw = pass.type === "password";
+  pass.type = showPw ? "text" : "password";
+  $("eye").setAttribute("aria-pressed", String(showPw));
+  $("eye").setAttribute("aria-label", showPw ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน");
+  $("eyeOn").hidden = !showPw; $("eyeOff").hidden = showPw;
+});
+pass.addEventListener("keyup", e => { caps.hidden = !(e.getModifierState && e.getModifierState("CapsLock")); });
+[user, pass].forEach(el => el.addEventListener("input", clear));
+
+form.addEventListener("submit", async e => {
+  e.preventDefault();
+  clear();
+  const u = user.value.trim(), p = pass.value;
+  if (!u || !p) {
+    if (!u) $("fUser").classList.add("invalid");
+    if (!p) $("fPass").classList.add("invalid");
+    show("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน");
+    (u ? pass : user).focus();
+    return;
+  }
+  if (!configured) {
+    show("ยังไม่ได้เชื่อมต่อฐานข้อมูล Supabase จึงยังเข้าสู่ระบบไม่ได้ กรุณาแจ้งผู้ดูแลระบบ");
+    return;
+  }
+  busy(true);
+  try {
+    const { data, error } = await sb.functions.invoke(CONFIG.LOGIN_FUNCTION, { body: { username: u, password: p } });
+    if (error || !data || !data.access_token) {
+      const status = error && error.context && error.context.status;
+      if (status === 429) show("ลองเข้าสู่ระบบหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่");
+      else if (status === 401 || status === 400) show("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+      else show("เชื่อมต่อระบบไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
+      pass.select();
+      return;
+    }
+    const { error: sErr } = await sb.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
+    if (sErr) { show("เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่"); return; }
+    show("เข้าสู่ระบบสำเร็จ", true);
+    location.href = data.must_change_password ? CONFIG.HOME_URL + "#password" : CONFIG.HOME_URL + "#home";
+  } catch (err) {
+    show("เชื่อมต่อระบบไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
+  } finally {
+    busy(false);
+  }
+});
+</script>
+
+</body></html>

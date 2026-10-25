@@ -1,0 +1,17 @@
+{
+  "name": "Smart Shuttle Bus EV",
+  "short_name": "Smart Shuttle",
+  "description": "ระบบบริหารจัดการรถโดยสารไฟฟ้า MRTA Shuttle Bus · บริษัท สมาร์ท เทอร์มินอล คอร์ปอเรชั่น จำกัด",
+  "lang": "th",
+  "start_url": "app.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#061436",
+  "theme_color": "#061436",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

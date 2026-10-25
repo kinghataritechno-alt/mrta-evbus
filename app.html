@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Smart Shuttle Bus EV</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<meta name="theme-color" content="#061436">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Smart Shuttle">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<div class="app">
+  <header class="top pad">
+    <div class="bar">
+      <img class="logo" src="assets/img/smart-terminal-logo.png" alt="SMART TERMINAL">
+      <div class="t"><b id="title">Smart Shuttle Bus EV</b><span id="who">กำลังโหลด…</span></div>
+      <img class="mrta" src="assets/img/mrta-logo.png" alt="รฟม.">
+    </div>
+  </header>
+  <main class="pad" id="main"><p class="loading"><span class="spin"></span>กำลังโหลด…</p></main>
+</div>
+<div class="tabs"><nav id="nav" aria-label="เมนูหลัก"></nav></div>
+<div class="sheet" id="sheet" hidden></div>
+<div class="viewer" id="viewer" hidden onclick="this.hidden=true"><img id="vImg" alt=""></div>
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>

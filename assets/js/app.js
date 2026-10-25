@@ -1,0 +1,640 @@
+/* Smart Shuttle Bus EV — app shell (Supabase). Pages: home, schedule, inspect, charge, maint, vehicle, report, account, password */
+const CFG = {
+  url: "https://gxgiefixfpfbwiaftkdb.supabase.co",
+  key: "sb_publishable_z7uItqnu_idS-uLr-ChxaQ_QaFO0c-j",
+  bucket: "evidence",
+};
+const sb = window.supabase.createClient(CFG.url, CFG.key);
+const $ = (id) => document.getElementById(id);
+const main = () => $("main");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = (n, d = 2) => Number(n || 0).toLocaleString("th-TH", { minimumFractionDigits: d, maximumFractionDigits: d });
+const MS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+const MONTH = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+const DOW = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+const DOWL = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+const bkk = () => new Date(Date.now() + 7 * 36e5);
+const today = () => bkk().toISOString().slice(0, 10);
+const nowHM = () => bkk().toISOString().slice(11, 16);
+const dObj = (d) => new Date(d + "T00:00:00");
+const bk = (d) => { if (!d) return "–"; const x = dObj(String(d).slice(0, 10)); return `${x.getDate()} ${MS[x.getMonth()]} ${x.getFullYear() + 543}`; };
+const bkLong = (d) => { const x = dObj(d); return `วัน${DOWL[x.getDay()]}ที่ ${x.getDate()} ${MONTH[x.getMonth()]} ${x.getFullYear() + 543}`; };
+const tHM = (ts) => ts ? new Date(new Date(ts).getTime() + 7 * 36e5).toISOString().slice(11, 16) : "";
+const iso = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+const COLOR = { "STC-01": "var(--c1)", "STC-02": "var(--c2)", "STC-03": "var(--c3)", "STC-04": "var(--c4)" };
+const SCOL = { "STC-01": "var(--s1)", "STC-02": "var(--s2)", "STC-03": "var(--s3)", "STC-04": "var(--s4)", "ไม่ระบุ": "var(--s0)" };
+const ROUTE = { R1: "ศูนย์วัฒนธรรมฯ – สถานี รฟม.", R2: "MRT อิสรภาพ – รพ.ศิริราช" };
+const ROLE_TH = { ADMIN: "ผู้ดูแลระบบ", MANAGER: "ผู้จัดการ", CUSTOMER: "รฟม. (MRTA)", DRIVER: "พนักงานขับรถ", MAINTENANCE: "ช่างซ่อมบำรุง" };
+
+let ME = null;        // my_today()
+let PROFILE = null;   // profiles row
+let VEH = [];         // vehicles visible to me
+const isMgr = () => ["ADMIN", "MANAGER"].includes(PROFILE?.role);
+const role = () => PROFILE?.role;
+
+function toast(t) { const el = $("toast"); el.textContent = t; el.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (el.hidden = true), 2800); }
+function errMsg(e) {
+  const m = (e && (e.message || e.error_description)) || String(e);
+  if (/row-level security|permission denied/i.test(m)) return "ไม่มีสิทธิ์ทำรายการนี้";
+  if (/duplicate key.*receipt_no/i.test(m)) return "เลขที่ใบเสร็จนี้เคยบันทึกแล้ว";
+  if (/Failed to fetch|NetworkError/i.test(m)) return "เชื่อมต่ออินเทอร์เน็ตไม่ได้ ลองใหม่อีกครั้ง";
+  return m;
+}
+const busImg = (code) => `assets/img/${code}-thumb.jpg`;
+const vById = (id) => VEH.find((v) => v.id === id);
+const loading = () => (main().innerHTML = `<p class="loading"><span class="spin"></span>กำลังโหลด…</p>`);
+async function q(p) { const { data, error } = await p; if (error) throw error; return data; }
+
+/* ---------- images ---------- */
+function shrink(file, max = 1400, quality = 0.75) {
+  return new Promise((res) => {
+    const u = URL.createObjectURL(file), im = new Image();
+    im.onload = () => {
+      const s = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement("canvas");
+      c.width = Math.round(im.width * s); c.height = Math.round(im.height * s);
+      c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u);
+      c.toBlob((b) => res(b), "image/jpeg", quality);
+    };
+    im.onerror = () => res(null); im.src = u;
+  });
+}
+async function upload(vehicleId, kind, blob, i = 0) {
+  const path = `${vehicleId}/${kind}/${today()}/${Date.now()}-${i}.jpg`;
+  const { error } = await sb.storage.from(CFG.bucket).upload(path, blob, { contentType: "image/jpeg", upsert: false });
+  if (error) throw error;
+  return path;
+}
+async function signed(paths) {
+  if (!paths?.length) return [];
+  const { data } = await sb.storage.from(CFG.bucket).createSignedUrls(paths, 3600);
+  return (data || []).map((x) => x.signedUrl).filter(Boolean);
+}
+document.addEventListener("click", (e) => { const v = e.target.closest("[data-view]"); if (v) { $("vImg").src = v.dataset.view || v.src; $("viewer").hidden = false; } });
+
+/* ---------- boot ---------- */
+async function boot() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return location.replace("index.html");
+  try {
+    PROFILE = await q(sb.from("profiles").select("*").eq("user_id", session.user.id).single());
+    ME = await q(sb.rpc("my_today"));
+    VEH = await q(sb.from("vehicles").select("*").order("code"));
+  } catch (e) { main().innerHTML = `<p class="err">โหลดข้อมูลไม่ได้: ${esc(errMsg(e))}</p>`; return; }
+  $("who").textContent = `${PROFILE.display_name || PROFILE.username} · ${ROLE_TH[PROFILE.role]}`;
+  drawNav();
+  window.addEventListener("hashchange", route);
+  route();
+}
+sb.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") location.replace("index.html"); });
+
+const NAV = () => [
+  ["home", "หน้าหลัก", '<path d="M4 11 12 4l8 7v8.5a.5.5 0 0 1-.5.5H15v-6H9v6H4.5a.5.5 0 0 1-.5-.5z"/>'],
+  ["schedule", "ตารางงาน", '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>'],
+  ["vehicle", "ข้อมูลรถ", '<rect x="4.5" y="4" width="15" height="13" rx="2.5"/><path d="M4.5 11h15M7.5 20v-3M16.5 20v-3"/>'],
+  isMgr() ? ["report", "รายงาน", '<path d="M4 19h16"/><path d="M6 15l4-5 3 3 5-7"/>'] : ["maint", "ซ่อมบำรุง", '<path d="M14.5 6.5a4 4 0 0 0-5.3 5.3L4 17l3 3 5.2-5.2a4 4 0 0 0 5.3-5.3l-2.4 2.4-2.6-.4-.4-2.6z"/>'],
+  ["account", "บัญชี", '<circle cx="12" cy="8" r="4"/><path d="M4.5 20c1.2-3.6 4-5.4 7.5-5.4s6.3 1.8 7.5 5.4"/>'],
+];
+function drawNav() {
+  $("nav").innerHTML = NAV().map(([k, l, p]) => `<a href="#${k}" data-k="${k}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${p}</svg>${l}</a>`).join("");
+}
+const PAGES = { home, schedule, inspect, charge, maint, vehicle, report, account, password };
+function route() {
+  let k = (location.hash || "#home").slice(1);
+  if (PROFILE.must_change_password && k !== "password") k = "password";
+  if (!PAGES[k]) k = "home";
+  if (k === "report" && !isMgr()) k = "home";
+  document.querySelectorAll("#nav a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.k === k) || a.setAttribute("aria-current", a.dataset.k === k ? "page" : "false"));
+  document.querySelectorAll("#nav a").forEach((a) => { if (a.dataset.k === k) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
+  scrollTo(0, 0);
+  loading();
+  PAGES[k]().catch((e) => (main().innerHTML = `<p class="err">${esc(errMsg(e))}</p>`));
+}
+async function refreshMe() { ME = await q(sb.rpc("my_today")); VEH = await q(sb.from("vehicles").select("*").order("code")); }
+function myVehicles() { return isMgr() || ["MAINTENANCE"].includes(role()) ? VEH : VEH.filter((v) => (ME.vehicles || []).some((x) => x.id === v.id)); }
+function busPicker(list, sel, attr = "data-b") {
+  return `<div class="buses">${list.map((v) => `<button class="busbtn" style="--c:${COLOR[v.code]}" aria-pressed="${v.id === sel}" ${attr}="${v.id}"><b>${v.code}</b><small class="num">${v.plate}</small></button>`).join("")}</div>`;
+}
+function copyText(t) { navigator.clipboard.writeText(t).then(() => toast("คัดลอกแล้ว วางในกลุ่ม LINE ได้เลย")).catch(() => toast("คัดลอกไม่ได้ในเครื่องนี้")); }
+
+/* ================= HOME ================= */
+async function home() {
+  const d = ME.date, name = ME.employee?.name || PROFILE.display_name;
+  let html = `<h1 class="hello">สวัสดี ${esc(name)}</h1><p class="sub">${bkLong(d)}</p>`;
+  if (role() === "DRIVER") html += await homeDriver();
+  else html += await homeFleet();
+  main().innerHTML = html;
+  bindHome();
+}
+async function homeDriver() {
+  const vs = myVehicles();
+  const claims = await q(sb.from("cover_claims").select("*").eq("work_date", ME.date));
+  let h = "";
+  const pend = claims.filter((c) => c.status === "pending" && c.relief_employee_id === ME.employee?.id);
+  if (pend.length) h += `<p class="notice" style="margin-top:12px">รับรถแทนแล้ว รอผู้จัดการอนุมัติ ใช้รถได้ตามปกติ</p>`;
+  const absent = claims.find((c) => c.absent_employee_id === ME.employee?.id && c.status !== "rejected");
+  if (absent) h += `<p class="notice" style="margin-top:12px">วันนี้มีผู้รับรถแทนคุณแล้ว (${absent.reason}) ${absent.status === "pending" ? "รออนุมัติ" : "อนุมัติแล้ว"}</p>`;
+  if (vs.length) {
+    const ids = vs.map((v) => v.id);
+    const [queue, insp] = await Promise.all([
+      q(sb.from("vehicle_queue").select("*").eq("work_date", ME.date).in("vehicle_id", ids)),
+      q(sb.from("inspections").select("vehicle_id,result,inspected_at").in("vehicle_id", ids).gte("inspected_at", ME.date + "T00:00:00+07:00")),
+    ]);
+    h += `<h2>รถของคุณวันนี้</h2><div class="list">` + vs.map((v) => {
+      const qq = queue.find((x) => x.vehicle_id === v.id), ins = insp.find((x) => x.vehicle_id === v.id);
+      return `<article class="bus" style="--c:${COLOR[v.code]}"><img src="${busImg(v.code)}" alt="${v.code}"><div class="b">
+        <div class="row1"><b>${v.code}</b><span class="plate num">${v.plate}</span>${ins ? `<span class="pill ${ins.result === "normal" ? "ok" : "bad"}">${ins.result === "normal" ? "ตรวจแล้ว ปกติ" : "ตรวจแล้ว ไม่ปกติ"}</span>` : `<span class="pill warn">ยังไม่ตรวจรถ</span>`}</div>
+        <div class="sm">${ROUTE[v.route_code] || ""}</div>
+        <div class="sm num">${qq ? `รอบแรก <b>${String(qq.first_time).slice(0, 5)}</b> จาก${esc(qq.first_origin)} · แผน <b>${qq.queue_code === "R2" ? "2 รอบ" : qq.planned_trips + " เที่ยว"}</b>` : "ยังไม่มีคิววันนี้"}</div>
+      </div></article>`;
+    }).join("") + `</div>`;
+    h += `<h2>เมนู</h2><div class="actions">${ACT.inspect}${ACT.charge}${ACT.maint}${ACT.accident}${ACT.schedule}${ACT.vehicle}</div>`;
+  } else {
+    const st = ME.schedule?.status;
+    h += `<h2>วันนี้</h2><div class="empty"><b>${st === "off" ? "วันหยุดของคุณ" : st === "leave" ? "วันลา" : st === "standby" ? "วันนี้คุณเป็นคนขับสำรอง" : "วันนี้ยังไม่มีรถที่ได้รับมอบหมาย"}</b>${st === "standby" ? "พร้อมรับรถแทนเมื่อมีคนขับลาหรือขาด" : "ดูตารางงานของคุณได้ที่เมนูตารางงาน"}</div>`;
+    if (["relief", "spare"].includes(ME.employee?.kind)) {
+      const cl = await q(sb.rpc("claimable_today"));
+      h += `<h2>รับรถแทน <small>รถที่คนขับประจำยังไม่เริ่มงาน</small></h2>` + (cl.length ? `<div class="list">${cl.map((c) => `<article class="bus" style="--c:${COLOR[c.code]}"><img src="${busImg(c.code)}" alt=""><div class="b"><div class="row1"><b>${c.code}</b><span class="plate num">${c.plate}</span></div><div class="sm">คนขับตามตาราง <b>${esc(c.driver_name || "ไม่มี")}</b></div><button class="btn" data-claim="${c.vehicle_id}" data-absent="${c.driver_id || ""}" data-name="${esc(c.driver_name || "")}" data-code="${c.code}">รับรถแทน</button></div></article>`).join("")}</div>` : `<div class="empty">ไม่มีรถที่ต้องรับแทนตอนนี้</div>`);
+    }
+    h += `<h2>เมนู</h2><div class="actions">${ACT.schedule}${ACT.maint}${ACT.account}</div>`;
+  }
+  return h;
+}
+async function homeFleet() {
+  const d = ME.date;
+  const [ws, insp, claims, jobs, accs, queue] = await Promise.all([
+    isMgr() ? q(sb.from("work_schedules").select("*, employees(full_name,kind)").eq("work_date", d)) : Promise.resolve([]),
+    role() === "CUSTOMER" ? Promise.resolve([]) : q(sb.from("inspections").select("vehicle_id,result").gte("inspected_at", d + "T00:00:00+07:00")),
+    isMgr() ? q(sb.from("cover_claims").select("*").eq("status", "pending")) : Promise.resolve([]),
+    role() === "CUSTOMER" ? Promise.resolve([]) : q(sb.from("maintenance_jobs").select("id,status,vehicle_id").lt("status", 2)),
+    role() === "CUSTOMER" ? Promise.resolve([]) : q(sb.from("accidents").select("id,status").lt("status", 2)),
+    q(sb.from("vehicle_queue").select("*").eq("work_date", d)),
+  ]);
+  let h = `<section class="sum"><div class="tile"><small>รถให้บริการวันนี้</small><b class="num">${queue.length || "–"}/${VEH.length}</b><span>คัน</span></div>
+    <div class="tile ${jobs.length ? "alert" : ""}"><small>งานซ่อมค้าง</small><b class="num">${jobs.length}</b><span>รายการ</span></div>
+    <div class="tile ${accs.length ? "alert" : ""}"><small>อุบัติเหตุยังไม่ปิด</small><b class="num">${accs.length}</b><span>เรื่อง</span></div></section>`;
+  if (claims.length) {
+    const emp = await q(sb.from("employees").select("id,full_name"));
+    const nm = (id) => emp.find((e) => e.id === id)?.full_name || "–";
+    h += `<h2>รออนุมัติรับรถแทน <small>${claims.length} รายการ</small></h2><div class="list">${claims.map((c) => `<div class="card"><div class="row1"><b>${vById(c.vehicle_id)?.code || ""}</b><span class="pill warn">รออนุมัติ</span></div>
+      <p class="sm" style="margin:4px 0 8px">${esc(nm(c.relief_employee_id))} รับรถแทน ${esc(nm(c.absent_employee_id))} · ${esc(c.reason)} · ${bk(c.work_date)} ${tHM(c.claimed_at)} น.</p>
+      <div class="acts"><button class="btn pri" data-decide="${c.id}" data-ok="1">อนุมัติ</button><button class="btn" data-decide="${c.id}" data-ok="0">ไม่อนุมัติ</button></div></div>`).join("")}</div>`;
+  }
+  if (queue.length === 0) h += `<p class="notice" style="margin-top:12px">ยังไม่มีคิวรถของวันนี้ในระบบ (มีตารางตั้งแต่ 1 พ.ย. 2569)</p>`;
+  h += `<h2>รถวันนี้</h2><div class="list">` + VEH.map((v) => {
+    const w = ws.find((x) => x.vehicle_id === v.id && x.status === "work"), qq = queue.find((x) => x.vehicle_id === v.id), ins = insp.find((x) => x.vehicle_id === v.id);
+    return `<article class="bus" style="--c:${COLOR[v.code]}"><img src="${busImg(v.code)}" alt=""><div class="b">
+      <div class="row1"><b>${v.code}</b><span class="plate num">${v.plate}</span>${role() === "CUSTOMER" ? "" : ins ? `<span class="pill ${ins.result === "normal" ? "ok" : "bad"}">${ins.result === "normal" ? "ตรวจแล้ว" : "ไม่ปกติ"}</span>` : `<span class="pill warn">ยังไม่ตรวจ</span>`}</div>
+      <div class="sm">${ROUTE[v.route_code] || ""}</div>
+      ${isMgr() ? `<div class="sm">คนขับ <b>${esc(w?.employees?.full_name || "ยังไม่จัด")}</b>${w?.note ? `<em class="sub2">${esc(w.note.includes("แทน") ? "ขับแทน" : w.note)}</em>` : ""}</div>` : ""}
+      <div class="sm num">${qq ? `รอบแรก <b>${String(qq.first_time).slice(0, 5)}</b> · ${qq.queue_code === "R2" ? "2 รอบ" : qq.planned_trips + " เที่ยว"}` : "ไม่มีคิว"}</div></div></article>`;
+  }).join("") + `</div>`;
+  h += `<h2>เมนู</h2><div class="actions">${role() === "CUSTOMER" ? ACT.schedule + ACT.vehicle : ACT.inspect + ACT.charge + ACT.maint + ACT.schedule + ACT.vehicle + (isMgr() ? ACT.report : ACT.accident)}</div>`;
+  return h;
+}
+const ic = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">${p}</svg>`;
+const ACT = {
+  inspect: `<a class="act" href="#inspect">${ic('<path d="M9 4h6v3H9z"/><rect x="5" y="5.5" width="14" height="15" rx="2"/><path d="M8.5 13l2.3 2.3L15.5 10.5"/>')}ตรวจสภาพรถ</a>`,
+  charge: `<a class="act" href="#charge">${ic('<rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 10.5v3"/><path d="M11.5 8.5 9 12.5h3.5L10 15.5"/>')}บันทึกการชาร์จ</a>`,
+  maint: `<a class="act" href="#maint">${ic('<path d="M14.5 6.5a4 4 0 0 0-5.3 5.3L4 17l3 3 5.2-5.2a4 4 0 0 0 5.3-5.3l-2.4 2.4-2.6-.4-.4-2.6z"/>')}ซ่อมบำรุง</a>`,
+  accident: `<a class="act" href="#maint/accident">${ic('<path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4.5M12 17v.5"/>')}แจ้งอุบัติเหตุ</a>`,
+  schedule: `<a class="act" href="#schedule">${ic('<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>')}ตารางงาน</a>`,
+  vehicle: `<a class="act" href="#vehicle">${ic('<rect x="4.5" y="4" width="15" height="13" rx="2.5"/><path d="M4.5 11h15M7.5 20v-3M16.5 20v-3"/>')}ข้อมูลรถ</a>`,
+  report: `<a class="act" href="#report">${ic('<path d="M4 19h16"/><path d="M6 15l4-5 3 3 5-7"/>')}รายงานการชาร์จ</a>`,
+  account: `<a class="act" href="#account">${ic('<circle cx="12" cy="8" r="4"/><path d="M4.5 20c1.2-3.6 4-5.4 7.5-5.4s6.3 1.8 7.5 5.4"/>')}บัญชีผู้ใช้</a>`,
+};
+function bindHome() {
+  main().querySelectorAll("[data-decide]").forEach((b) => (b.onclick = async () => {
+    b.disabled = true;
+    try { await q(sb.rpc("decide_cover", { p_claim: b.dataset.decide, p_approve: b.dataset.ok === "1" })); toast(b.dataset.ok === "1" ? "อนุมัติแล้ว" : "ไม่อนุมัติแล้ว"); home(); }
+    catch (e) { toast(errMsg(e)); b.disabled = false; }
+  }));
+  main().querySelectorAll("[data-claim]").forEach((b) => (b.onclick = () => claimSheet(b.dataset)));
+}
+function claimSheet(dset) {
+  const REASONS = ["ลาป่วย", "ลากิจ", "ติดต่อไม่ได้", "อื่น ๆ"];
+  let reason = REASONS[0];
+  const s = $("sheet");
+  s.innerHTML = `<div class="in"><div class="sh"><b>รับรถแทน ${esc(dset.code)}</b><button class="lnk" id="shX">ปิด</button></div>
+    <p class="sm">คนขับตามตาราง: <b>${esc(dset.name || "ไม่มี")}</b></p>
+    <p class="lbl">เหตุผล</p><div class="chips" id="rs">${REASONS.map((r) => `<button class="chip" aria-pressed="${r === reason}" data-r="${r}">${r}</button>`).join("")}</div>
+    <div class="fld full"><label for="rsNote">รายละเอียด (ถ้ามี)</label><input id="rsNote" placeholder="เช่น โทรแจ้งเวลา 05:40"></div>
+    <p class="notice">กดแล้วใช้รถคันนี้ได้ทันที ระบบแจ้งผู้จัดการให้อนุมัติย้อนหลัง</p>
+    <button class="btn pri block" id="doClaim">ยืนยันรับรถแทน</button></div>`;
+  s.hidden = false;
+  $("shX").onclick = () => (s.hidden = true);
+  $("rs").onclick = (e) => { const c = e.target.closest(".chip"); if (!c) return; reason = c.dataset.r; $("rs").querySelectorAll(".chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c))); };
+  $("doClaim").onclick = async () => {
+    $("doClaim").disabled = true;
+    try {
+      const note = $("rsNote").value.trim();
+      await q(sb.rpc("claim_vehicle", { p_vehicle: dset.claim, p_absent: dset.absent || null, p_reason: note ? `${reason}: ${note}` : reason }));
+      s.hidden = true; toast(`รับรถแทน ${dset.code} แล้ว`); await refreshMe(); home();
+    } catch (e) { toast(errMsg(e)); $("doClaim").disabled = false; }
+  };
+}
+
+/* ================= SCHEDULE ================= */
+let schedMonth = null, schedDay = null;
+async function schedule() {
+  if (!schedMonth) { const t = dObj(today()); schedMonth = new Date(t.getFullYear(), t.getMonth(), 1); }
+  if (isMgr()) return scheduleManager();
+  const a = iso(schedMonth), b = iso(new Date(schedMonth.getFullYear(), schedMonth.getMonth() + 1, 0));
+  const rows = await q(sb.from("work_schedules").select("*").eq("employee_id", ME.employee?.id || "00000000-0000-0000-0000-000000000000").gte("work_date", a).lte("work_date", b).order("work_date"));
+  const counts = { work: 0, off: 0, leave: 0, standby: 0 }; rows.forEach((r) => counts[r.status]++);
+  main().innerHTML = `<div class="wk"><button id="mPrev" aria-label="เดือนก่อน">‹</button><div>${MONTH[schedMonth.getMonth()]} ${schedMonth.getFullYear() + 543}<small>ตารางปฏิบัติงานของ ${esc(ME.employee?.name || "")}</small></div><button id="mNext" aria-label="เดือนถัดไป">›</button></div>
+   <section class="sum"><div class="tile"><small>วันทำงาน</small><b class="num">${counts.work}</b><span>วัน</span></div><div class="tile"><small>วันหยุด/ลา</small><b class="num">${counts.off + counts.leave}</b><span>วัน</span></div><div class="tile"><small>สำรอง</small><b class="num">${counts.standby}</b><span>วัน</span></div></section>
+   <h2>รายวัน</h2><div class="list">${rows.length ? rows.map(dayRow).join("") : `<div class="empty"><b>ยังไม่มีตารางเดือนนี้</b>ผู้จัดการยังไม่ได้จัดตาราง</div>`}</div>`;
+  $("mPrev").onclick = () => { schedMonth.setMonth(schedMonth.getMonth() - 1); schedule(); };
+  $("mNext").onclick = () => { schedMonth.setMonth(schedMonth.getMonth() + 1); schedule(); };
+}
+function dayRow(r) {
+  const x = dObj(r.work_date), v = vById(r.vehicle_id);
+  const st = { work: v ? `<b>${v.code}</b> · รอบแรก ${String(r.first_time || "").slice(0, 5)} ${esc(r.first_origin || "")}` : "ทำงาน", off: "วันหยุด", leave: `ลา${r.leave_type ? " · " + esc(r.leave_type) : ""}`, standby: "สำรอง (พร้อมรับรถแทน)" }[r.status];
+  return `<div class="day ${x.getDay() % 6 === 0 ? "we" : ""} ${r.work_date === today() ? "today" : ""}" style="${v ? `border-left:4px solid ${COLOR[v.code]}` : ""}"><div class="d"><b class="num">${x.getDate()}</b><small>${DOW[x.getDay()]}</small></div><div class="sm">${st}${r.note ? `<em class="sub2">${esc(r.note.includes("แทน") ? "ขับแทน" : r.note)}</em>` : ""}</div></div>`;
+}
+async function scheduleManager() {
+  if (!schedDay) schedDay = today() < "2026-11-01" ? "2026-11-01" : today();
+  const [rows, emps] = await Promise.all([
+    q(sb.from("work_schedules").select("*").eq("work_date", schedDay)),
+    q(sb.from("employees").select("*").in("kind", ["regular", "relief", "spare"]).order("code")),
+  ]);
+  main().innerHTML = `<div class="wk"><button id="dPrev" aria-label="วันก่อน">‹</button><div>${bkLong(schedDay)}<small>ตารางปฏิบัติงาน · แตะชื่อเพื่อแก้ไข</small></div><button id="dNext" aria-label="วันถัดไป">›</button></div>
+   <div class="fld" style="margin-top:8px"><label for="dPick">ไปวันที่</label><input type="date" id="dPick" value="${schedDay}"></div>
+   <h2>พนักงานขับรถ</h2><div class="list">${emps.map((e) => { const r = rows.find((x) => x.employee_id === e.id) || { status: null }; const v = vById(r.vehicle_id);
+     return `<button class="day" style="text-align:left;cursor:pointer;${v ? `border-left:4px solid ${COLOR[v.code]}` : ""}" data-edit="${e.id}"><div class="d"><b style="font-size:.9rem">${esc(e.full_name.split(" ")[0])}</b><small>${{ regular: "ประจำ", relief: "ขับแทน", spare: "สแปร์" }[e.kind]}</small></div><div class="sm">${r.status ? { work: v ? `<b>${v.code}</b> · ${String(r.first_time || "").slice(0, 5)} ${esc(r.first_origin || "")}` : "ทำงาน", off: "วันหยุด", leave: "ลา " + esc(r.leave_type || ""), standby: "สำรอง" }[r.status] : "ยังไม่จัด"}${r.note ? `<em class="sub2">${esc(r.note)}</em>` : ""}</div></button>`; }).join("")}</div>`;
+  const go = (d) => { schedDay = d; scheduleManager(); };
+  $("dPrev").onclick = () => { const x = dObj(schedDay); x.setDate(x.getDate() - 1); go(iso(x)); };
+  $("dNext").onclick = () => { const x = dObj(schedDay); x.setDate(x.getDate() + 1); go(iso(x)); };
+  $("dPick").onchange = (e) => e.target.value && go(e.target.value);
+  main().querySelectorAll("[data-edit]").forEach((b) => (b.onclick = () => editSched(emps.find((e) => e.id === b.dataset.edit), rows.find((x) => x.employee_id === b.dataset.edit))));
+}
+function editSched(emp, row) {
+  const s = $("sheet");
+  s.innerHTML = `<div class="in"><div class="sh"><b>${esc(emp.full_name)} · ${bk(schedDay)}</b><button class="lnk" id="shX">ปิด</button></div>
+   <div class="grid"><div class="fld"><label for="eSt">สถานะ</label><select id="eSt">${[["work", "ทำงาน"], ["off", "วันหยุด"], ["leave", "ลา"], ["standby", "สำรอง"]].map(([k, l]) => `<option value="${k}" ${row?.status === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+   <div class="fld"><label for="eV">รถ</label><select id="eV"><option value="">–</option>${VEH.map((v) => `<option value="${v.id}" ${row?.vehicle_id === v.id ? "selected" : ""}>${v.code}</option>`).join("")}</select></div>
+   <div class="fld"><label for="eLt">ประเภทการลา</label><select id="eLt"><option value="">–</option>${["ลาป่วย", "ลากิจ", "ลาพักร้อน", "อื่น ๆ"].map((x) => `<option ${row?.leave_type === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
+   <div class="fld"><label for="eT">รอบแรก</label><input id="eT" type="time" value="${String(row?.first_time || "").slice(0, 5)}"></div>
+   <div class="fld full"><label for="eO">ต้นทางรอบแรก</label><select id="eO">${["", "ศูนย์วัฒนธรรมฯ", "สถานี รฟม.", "รฟม. สำนักงานใหญ่", "MRT อิสรภาพ"].map((o) => `<option ${row?.first_origin === o ? "selected" : ""} value="${o}">${o || "–"}</option>`).join("")}</select></div>
+   <div class="fld full"><label for="eN">หมายเหตุ</label><input id="eN" value="${esc(row?.note || "")}"></div></div>
+   <p class="err" id="eErr" hidden></p><button class="btn pri block" id="eSave">บันทึก</button></div>`;
+  s.hidden = false; $("shX").onclick = () => (s.hidden = true);
+  $("eSave").onclick = async () => {
+    const st = $("eSt").value, vid = $("eV").value || null;
+    if (st === "work" && !vid) { $("eErr").textContent = "สถานะทำงานต้องเลือกรถ"; $("eErr").hidden = false; return; }
+    const rec = { work_date: schedDay, employee_id: emp.id, status: st, vehicle_id: st === "work" ? vid : null, leave_type: st === "leave" ? $("eLt").value || null : null, first_time: st === "work" && $("eT").value ? $("eT").value : null, first_origin: st === "work" ? $("eO").value || null : null, note: $("eN").value.trim() || null, created_by: (await sb.auth.getUser()).data.user.id, updated_at: new Date().toISOString() };
+    try { await q(sb.from("work_schedules").upsert(rec, { onConflict: "work_date,employee_id" })); s.hidden = true; toast("บันทึกตารางแล้ว"); scheduleManager(); }
+    catch (e) { $("eErr").textContent = /one_driver_per_vehicle/.test(e.message) ? "รถคันนี้มีคนขับในวันนี้แล้ว เปลี่ยนคนเดิมก่อน" : errMsg(e); $("eErr").hidden = false; }
+  };
+}
+
+/* ================= INSPECTION ================= */
+const PHOTOS = [
+  ["คนขับคู่กับรถ", "ถ่ายตัวเองให้เห็นรถด้านหลัง", ["ไม่ได้แต่งกายตามระเบียบ"]],
+  ["ด้านหน้ารถ", "ป้ายทะเบียน เลขรถ กระจก ไฟหน้า ป้ายเส้นทาง", ["กระจกร้าว", "ไฟหน้าไม่ติด", "ป้ายเส้นทางไม่ตรง", "ตัวรถสกปรก"]],
+  ["ด้านข้างรถ", "กระจกมองข้าง ประตู ยาง", ["รอยถลอก/บุบ", "กระจกมองข้างเสียหาย", "ยางอ่อน"]],
+  ["หน้าปัด", "SOC เลขไมล์ อุณหภูมิ ไฟเตือน", ["มีไฟเตือน", "SOC ต่ำกว่าเกณฑ์", "อุณหภูมิผิดปกติ"]],
+  ["ห้องโดยสารด้านหน้า", "เบาะ ราวจับ ถังดับเพลิง ความสะอาด", ["เบาะชำรุด", "ถังดับเพลิงไม่พร้อม", "ห้องโดยสารสกปรก"]],
+  ["ห้องโดยสารด้านหลัง", "พื้นที่รถเข็น ทางลาด ประตูหลัง", ["ทางลาดใช้งานไม่ได้", "เข็มขัดรถเข็นชำรุด", "ประตูหลังขัดข้อง"]],
+  ["ห้องเครื่องด้านซ้าย", "สายไฟแรงสูง ขั้วต่อ น้ำมันในกระปุก", ["สายไฟ/ขั้วต่อผิดปกติ", "ระดับน้ำมันต่ำ", "มีรอยรั่วซึม"]],
+  ["ห้องเครื่องด้านขวา", "แบตเตอรี่ 12V น้ำหล่อเย็น ปั๊ม", ["น้ำหล่อเย็นต่ำ", "แบตเตอรี่ 12V มีคราบ", "มีรอยรั่วซึม"]],
+  ["ด้านหลังรถ", "ภาพรวมท้ายรถเมื่อเปิดฝาห้องเครื่อง", ["ไฟท้าย/ไฟเบรกไม่ติด", "ฝาห้องเครื่องปิดไม่สนิท"]]];
+const CHECKS = [["ระบบปรับอากาศ", ["แอร์ไม่เย็น", "แอร์มีเสียงดัง", "มีน้ำหยด"]], ["ประตูขึ้น-ลง", ["ประตูเปิดปิดช้า", "ประตูปิดไม่สนิท"]], ["ไฟหน้า ไฟเลี้ยว ไฟเบรก", ["ไฟเลี้ยวไม่ติด", "ไฟเบรกไม่ติด"]], ["เบรกและเบรกมือ", ["เบรกมีเสียง", "เบรกมือไม่อยู่"]], ["ยางและล้อ", ["ยางอ่อน", "ยางสึกมาก"]], ["ที่ปัดน้ำฝน แตร", ["ที่ปัดน้ำฝนไม่ทำงาน", "แตรไม่ดัง"]], ["จอ LED ป้ายเส้นทาง", ["จอ LED ไม่ติด", "แสดงเส้นทางผิด"]], ["กล้องและ GPS", ["กล้องไม่บันทึก", "GPS ไม่ส่งตำแหน่ง"]]];
+let INS = null;
+async function inspect() {
+  const vs = myVehicles();
+  if (!vs.length) { main().innerHTML = `<div class="empty" style="margin-top:16px"><b>วันนี้ไม่มีรถที่ได้รับมอบหมาย</b>ตรวจสภาพรถได้เมื่อมีรถในตารางงานของคุณ</div>`; return; }
+  INS = { vid: vs[0].id, P: PHOTOS.map(() => ({ blob: null, url: null, st: null, note: "" })), C: CHECKS.map(() => ({ st: null, note: "" })) };
+  drawInspect();
+}
+function segHTML(i, k, st) { return `<div class="seg2"><button class="okb" data-k="${k}" data-i="${i}" data-v="ok" aria-pressed="${st === "ok"}">ปกติ</button><button class="badb" data-k="${k}" data-i="${i}" data-v="bad" aria-pressed="${st === "bad"}">ไม่ปกติ</button></div>`; }
+function noteHTML(i, k, chips, val) { return `<div class="note"><div class="chips">${chips.map((c) => `<button data-k="${k}" data-i="${i}" data-chip="${esc(c)}">${esc(c)}</button>`).join("")}</div><textarea id="${k}n${i}" data-k="${k}" data-i="${i}" placeholder="อธิบายสิ่งที่ผิดปกติ เช่น แอร์ไม่เย็น">${esc(val)}</textarea></div>`; }
+function drawInspect() {
+  const v = vById(INS.vid), list = myVehicles();
+  main().innerHTML = `${list.length > 1 ? `<h2>รถที่ตรวจ</h2>${busPicker(list, INS.vid)}` : `<h2>รถที่ตรวจ</h2><article class="bus" style="--c:${COLOR[v.code]}"><img src="${busImg(v.code)}" alt=""><div class="b"><div class="row1"><b>${v.code}</b><span class="plate num">${v.plate}</span></div><div class="sm">${ROUTE[v.route_code] || ""}</div><div class="sm">ผู้ตรวจ <b>${esc(ME.employee?.name || PROFILE.display_name)}</b></div></div></article>`}
+   <h2>ถ่ายภาพ 9 จุด <small>ทุกภาพต้องระบุ ปกติ / ไม่ปกติ</small></h2><section class="items">${PHOTOS.map(([n, h, chips], i) => { const x = INS.P[i];
+     return `<article class="item ${x.st ? "done" : ""} ${x.st === "bad" ? "bad" : ""}"><label class="shot">${x.url ? `<img src="${x.url}" alt="">` : `${ic('<path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13.5" r="3.5"/>')}ถ่ายภาพ`}<input type="file" accept="image/*" capture="environment" data-ph="${i}" aria-label="ถ่ายภาพ ${n}"></label>
+     <div class="ib"><span class="n">${i + 1}. ${n}</span><span class="h">${h}</span>${segHTML(i, "p", x.st)}</div>${x.st === "bad" ? noteHTML(i, "p", chips, x.note) : ""}</article>`; }).join("")}</section>
+   <h2>ตรวจการทำงาน</h2><section class="checks">${CHECKS.map(([n, chips], i) => { const x = INS.C[i]; return `<div class="ck"><div class="r"><span>${n}</span>${segHTML(i, "c", x.st)}</div>${x.st === "bad" ? noteHTML(i, "c", chips, x.note) : ""}</div>`; }).join("")}</section>
+   <h2>ค่าจากหน้าปัด</h2><div class="grid"><div class="fld"><label for="soc">แบตเตอรี่ (SOC %)</label><input id="soc" class="big num" inputmode="numeric" maxlength="3" value="${INS.soc ?? ""}"></div><div class="fld"><label for="odo">เลขไมล์ (กม.)</label><input id="odo" class="big num" inputmode="numeric" maxlength="7" value="${INS.odo ?? ""}"></div></div>
+   <p class="err" id="iErr" hidden></p><p class="sm" id="iMiss" style="margin:10px 0 6px"></p><button class="btn pri block" id="iSend">ส่งผลตรวจ</button>`;
+  bindInspect(); updInspect();
+}
+function missingIns() {
+  const m = []; INS.P.forEach((x, i) => { if (!x.blob) m.push(`ภาพ ${i + 1}`); else if (!x.st) m.push(`สถานะภาพ ${i + 1}`); else if (x.st === "bad" && !x.note.trim()) m.push(`คำอธิบายภาพ ${i + 1}`); });
+  INS.C.forEach((x, i) => { if (!x.st) m.push(CHECKS[i][0]); else if (x.st === "bad" && !x.note.trim()) m.push("คำอธิบาย" + CHECKS[i][0]); });
+  if (!(INS.soc >= 0 && INS.soc <= 100 && INS.soc !== "")) m.push("SOC"); if (!INS.odo) m.push("เลขไมล์"); return m;
+}
+function updInspect() { const m = missingIns(); $("iSend").disabled = m.length > 0; $("iMiss").textContent = m.length ? `ยังขาด ${m.length} รายการ: ${m.slice(0, 3).join(", ")}${m.length > 3 ? " …" : ""}` : "ครบแล้ว พร้อมส่งผลตรวจ"; }
+function bindInspect() {
+  const M = main();
+  M.querySelectorAll("[data-b]").forEach((b) => (b.onclick = () => { INS.vid = b.dataset.b; drawInspect(); }));
+  M.querySelectorAll("[data-ph]").forEach((inp) => (inp.onchange = async () => { const f = inp.files[0]; if (!f) return; const i = +inp.dataset.ph; const blob = await shrink(f); if (!blob) return toast("เปิดรูปนี้ไม่ได้"); if (INS.P[i].url) URL.revokeObjectURL(INS.P[i].url); INS.P[i].blob = blob; INS.P[i].url = URL.createObjectURL(blob); drawInspect(); }));
+  M.querySelectorAll("button[data-k]").forEach((b) => (b.onclick = () => { const arr = b.dataset.k === "p" ? INS.P : INS.C, i = +b.dataset.i;
+    if (b.dataset.v) { arr[i].st = b.dataset.v; if (b.dataset.v === "ok") arr[i].note = ""; keepNums(); drawInspect(); if (b.dataset.v === "bad") $(b.dataset.k + "n" + i)?.focus(); return; }
+    if (b.dataset.chip) { const ta = $(b.dataset.k + "n" + i), v = ta.value.trim(); ta.value = v ? (v.includes(b.dataset.chip) ? v : v + ", " + b.dataset.chip) : b.dataset.chip; arr[i].note = ta.value; updInspect(); } }));
+  M.querySelectorAll("textarea[data-k]").forEach((t) => (t.oninput = () => { (t.dataset.k === "p" ? INS.P : INS.C)[+t.dataset.i].note = t.value; updInspect(); }));
+  ["soc", "odo"].forEach((id) => ($(id).oninput = (e) => { e.target.value = e.target.value.replace(/\D/g, ""); keepNums(); updInspect(); }));
+  $("iSend").onclick = sendInspect;
+}
+function keepNums() { const s = $("soc"), o = $("odo"); if (s) INS.soc = s.value === "" ? "" : +s.value; if (o) INS.odo = o.value === "" ? "" : +o.value; }
+async function sendInspect() {
+  keepNums(); if (missingIns().length) return;
+  const btn = $("iSend"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span>กำลังอัปโหลดภาพ…`;
+  try {
+    const paths = []; for (let i = 0; i < INS.P.length; i++) paths.push(await upload(INS.vid, "inspection", INS.P[i].blob, i));
+    const items = [...INS.P.map((x, i) => ({ group: "photo", name: PHOTOS[i][0], status: x.st, note: x.note.trim() || null, photo: paths[i] })), ...INS.C.map((x, i) => ({ group: "check", name: CHECKS[i][0], status: x.st, note: x.note.trim() || null }))];
+    const bads = items.filter((x) => x.status === "bad");
+    await q(sb.from("inspections").insert({ vehicle_id: INS.vid, employee_id: ME.employee?.id || null, result: bads.length ? "abnormal" : "normal", soc: INS.soc, odometer: INS.odo, items, photo_paths: paths }));
+    const v = vById(INS.vid), when = `${bk(today())} ${nowHM()} น.`;
+    const text = bads.length ? `${v.code} (${v.plate}) เช็ครถแล้ว พบสิ่งผิดปกติ ${bads.length} รายการ\n${bads.map((b) => `- ${b.name}: ${b.note}`).join("\n")}\nSOC ${INS.soc}% · เลขไมล์ ${INS.odo} กม.\n${ME.employee?.name || PROFILE.display_name} · ${when}` : `${v.code} (${v.plate}) เช็ครถภายนอกและภายใน พร้อมให้บริการ\nSOC ${INS.soc}% · เลขไมล์ ${INS.odo} กม.\n${ME.employee?.name || PROFILE.display_name} · ${when}`;
+    main().innerHTML = `<section style="padding-top:20px;display:flex;flex-direction:column;gap:12px"><span class="pill ${bads.length ? "bad" : "ok"}" style="margin:0;align-self:flex-start">${bads.length ? "ไม่ปกติ " + bads.length + " รายการ" : "ปกติทุกรายการ"}</span>
+      <h1 class="hello" style="margin:0">${bads.length ? `${v.code} ต้องแจ้งหัวหน้างานก่อนออกรถ` : `${v.code} พร้อมให้บริการ`}</h1>
+      <div class="card"><pre id="lineTxt" style="margin:0;white-space:pre-wrap;font:inherit;line-height:1.6">${esc(text)}</pre></div>
+      <button class="btn block" id="cp">คัดลอกข้อความส่งกลุ่ม LINE</button>
+      ${bads.length ? `<button class="btn danger block" id="mkJob">สร้างงานแจ้งซ่อมจากรายการที่ไม่ปกติ</button>` : ""}
+      <p class="okbox">บันทึกผลตรวจและภาพ 9 ภาพเข้าระบบแล้ว</p><a class="btn pri block" href="#home">กลับหน้าหลัก</a></section>`;
+    $("cp").onclick = () => copyText(text);
+    if (bads.length) $("mkJob").onclick = async () => { try { await q(sb.from("maintenance_jobs").insert({ vehicle_id: INS.vid, job_type: "ซ่อมแก้ไข (CM)", description: bads.map((b) => `${b.name}: ${b.note}`).join(" · "), reported_on: today(), odometer: INS.odo, reported_by: ME.employee?.id || null, photo_paths: bads.filter((b) => b.photo).map((b) => b.photo) })); toast("สร้างงานแจ้งซ่อมแล้ว"); $("mkJob").remove(); } catch (e) { toast(errMsg(e)); } };
+  } catch (e) { toast(errMsg(e)); btn.disabled = false; btn.textContent = "ส่งผลตรวจ"; }
+}
+
+/* ================= CHARGING ================= */
+const RUNKEY = "mrta-charge-run";
+const getRun = () => { try { return JSON.parse(localStorage.getItem(RUNKEY) || "null"); } catch (e) { return null; } };
+const setRun = (r) => { try { r ? localStorage.setItem(RUNKEY, JSON.stringify(r)) : localStorage.removeItem(RUNKEY); } catch (e) {} };
+let CH = { vid: null, blob: null, url: null };
+async function charge() {
+  const vs = myVehicles();
+  const recent = await q(sb.from("charging_records").select("*").order("created_at", { ascending: false }).limit(8));
+  if (!vs.length) { main().innerHTML = `<div class="empty" style="margin-top:16px"><b>วันนี้ไม่มีรถที่ได้รับมอบหมาย</b>บันทึกการชาร์จได้เมื่อมีรถในตารางงานของคุณ</div>${recentHTML(recent)}`; return; }
+  const run = getRun();
+  if (run && !vs.some((v) => v.id === run.vid)) setRun(null);
+  CH.vid = getRun()?.vid || CH.vid || vs[0].id;
+  drawCharge(vs, recent);
+}
+function recentHTML(rows) { return `<h2>บันทึกล่าสุด <small>${isMgr() ? "ทุกคัน" : "ของคุณ"}</small></h2>` + (rows.length ? `<div class="list">${rows.map((r) => { const v = vById(r.vehicle_id); return `<div class="card" style="border-left:4px solid ${v ? COLOR[v.code] : "var(--line)"}"><div class="row1"><b>${v?.code || "ไม่ระบุรถ"}</b><span class="sm">${bk(r.receipt_date || r.started_at)}${r.started_at ? " " + tHM(r.started_at) + "–" + tHM(r.ended_at) : ""}</span><span class="pill info num">${fmt(r.total)} บาท</span></div><div class="sm num">${r.receipt_no ? "ใบเสร็จ " + r.receipt_no + " · " : ""}${fmt(r.kwh, 2)} kWh${r.soc_before != null ? ` · แบต ${r.soc_before}% → ${r.soc_after}%` : ""}${r.source === "import" ? " · นำเข้า" : ""}</div></div>`; }).join("")}</div>` : `<div class="empty">ยังไม่มีบันทึกการชาร์จ</div>`); }
+function drawCharge(vs, recent) {
+  const run = getRun(), v = vById(CH.vid);
+  main().innerHTML = `<h2>เลือกรถเพื่อทำการชาร์จไฟฟ้า</h2>${busPicker(vs, CH.vid)}
+   ${!run ? `<button class="btn go block" id="startBtn" style="margin-top:14px">${ic('<path d="M13 3 6 13h5l-1 8 7-10h-5z"/>')}เริ่มดำเนินการชาร์จ</button>` : `
+   <section class="run" style="margin-top:14px"><div><span class="live"></span><b>กำลังชาร์จ ${v.code}</b></div>
+    <dl class="rt num"><div><dt>เริ่มชาร์จ</dt><dd>${run.start} น.</dd></div><div><dt>สิ้นสุด</dt><dd>เมื่อกดบันทึก</dd></div><div><dt>ใช้เวลา</dt><dd id="dur">–</dd></div></dl>
+    <div class="row1"><span class="sm" style="flex:1">เวลาสิ้นสุดบันทึกอัตโนมัติเมื่อกด "บันทึกการชาร์จ"</span><button class="lnk" id="cancelRun">ยกเลิก</button></div></section>
+   <div class="grid" style="margin-top:12px"><div class="fld full"><label for="cSt">สถานีชาร์จ</label><input id="cSt" value="สถานีอัดประจุ กฟน. (MEA)"></div>
+    <div class="fld"><label for="cA">แบตก่อนชาร์จ (%)</label><input id="cA" class="big num" inputmode="numeric" maxlength="3"></div>
+    <div class="fld"><label for="cB">แบตหลังชาร์จ (%)</label><input id="cB" class="big num" inputmode="numeric" maxlength="3"></div></div>
+   <h2>ใบเสร็จการชาร์จ <small>จำเป็นต้องแนบ</small></h2>
+   <label class="btn block" style="min-height:${CH.url ? "auto" : "90px"};border-style:dashed">${CH.url ? `<img src="${CH.url}" alt="ใบเสร็จ" style="max-width:100%;max-height:300px;display:block">` : "ถ่ายภาพใบเสร็จ"}<input type="file" accept="image/*" capture="environment" id="cRc"></label>
+   <div class="grid" style="margin-top:8px"><div class="fld"><label for="cNo">เลขที่ใบเสร็จ</label><input id="cNo" class="num" inputmode="numeric" placeholder="0069xxxxxxxx"></div>
+    <div class="fld"><label for="cRef">เลขอ้างอิงการชาร์จ</label><input id="cRef" placeholder="EV69xxxxxxx"></div>
+    <div class="fld"><label for="cK">พลังงาน (kWh)</label><input id="cK" class="big num" inputmode="decimal"></div>
+    <div class="fld"><label for="cSub">ค่าไฟก่อน VAT</label><input id="cSub" class="big num" inputmode="decimal"></div>
+    <div class="fld"><label for="cVat">VAT 7%</label><input id="cVat" class="big num" inputmode="decimal"></div>
+    <div class="fld"><label for="cTot">รวมทั้งสิ้น (บาท)</label><input id="cTot" class="big num" inputmode="decimal"></div></div>
+   <p class="sm num" id="cChk" style="margin:8px 0 0"></p><p class="err" id="cErr" hidden></p>
+   <button class="btn pri block" id="cSave" style="margin-top:12px">บันทึกการชาร์จ</button>`}
+   ${recentHTML(recent)}`;
+  main().querySelectorAll("[data-b]").forEach((b) => (b.onclick = () => { CH.vid = b.dataset.b; const r = getRun(); if (r) { r.vid = CH.vid; setRun(r); } drawCharge(vs, recent); }));
+  if (!run) { $("startBtn").onclick = () => { setRun({ vid: CH.vid, start: nowHM(), date: today(), ms: Date.now() }); toast(`เริ่มชาร์จ ${vById(CH.vid).code} เวลา ${nowHM()} น.`); drawCharge(vs, recent); }; return; }
+  const tick = () => { const m = Math.round((Date.now() - run.ms) / 60000); const el = $("dur"); if (el) el.textContent = `${Math.floor(m / 60)} ชม. ${m % 60} น.`; }; tick(); clearInterval(drawCharge.t); drawCharge.t = setInterval(tick, 30000);
+  $("cancelRun").onclick = (e) => { const b = e.currentTarget; if (b.dataset.c !== "1") { b.dataset.c = "1"; b.textContent = "แตะอีกครั้งเพื่อยกเลิก"; return; } setRun(null); CH.blob = null; CH.url = null; drawCharge(vs, recent); };
+  $("cRc").onchange = async (e) => { const f = e.target.files[0]; if (!f) return; CH.blob = await shrink(f, 1600, 0.8); CH.url = CH.blob && URL.createObjectURL(CH.blob); const keep = readCharge(); drawCharge(vs, recent); writeCharge(keep); };
+  ["cA", "cB"].forEach((id) => ($(id).oninput = (e) => (e.target.value = e.target.value.replace(/\D/g, ""))));
+  ["cK", "cSub", "cVat", "cTot"].forEach((id) => ($(id).oninput = (e) => { e.target.value = e.target.value.replace(/[^\d.]/g, ""); chkCharge(); }));
+  $("cSave").onclick = () => saveCharge(vs);
+}
+function readCharge() { const o = {}; ["cSt", "cA", "cB", "cNo", "cRef", "cK", "cSub", "cVat", "cTot"].forEach((id) => { const el = $(id); if (el) o[id] = el.value; }); return o; }
+function writeCharge(o) { Object.entries(o).forEach(([k, v]) => { const el = $(k); if (el) el.value = v; }); chkCharge(); }
+function chkCharge() {
+  const k = +$("cK").value, s = +$("cSub").value, v = +$("cVat").value, t = +$("cTot").value, L = [];
+  if (k && s) L.push(Math.abs(k * 7.0093 - s) <= 0.05 ? "✓ kWh × 7.0093 ตรงกับค่าไฟก่อน VAT" : `! kWh × 7.0093 = ${fmt(k * 7.0093)} ไม่ตรงกับ ${fmt(s)}`);
+  if (s && v) L.push(Math.abs(s * 0.07 - v) <= 0.02 ? "✓ VAT = 7%" : "! VAT ไม่เท่ากับ 7%");
+  if (s && t) L.push(Math.abs(s + v - t) <= 0.02 ? "✓ ยอดรวมถูกต้อง" : "! ก่อน VAT + VAT ไม่เท่ากับยอดรวม");
+  $("cChk").textContent = L.join(" · ");
+}
+async function saveCharge(vs) {
+  const run = getRun(), o = readCharge(), err = [];
+  const a = o.cA === "" ? null : +o.cA, b = o.cB === "" ? null : +o.cB, k = parseFloat(o.cK), tot = parseFloat(o.cTot);
+  if (!o.cSt.trim()) err.push("สถานีชาร์จ"); if (a == null || b == null) err.push("แบตก่อนและหลังชาร์จ"); else if (a > 100 || b > 100 || b <= a) err.push("แบตหลังชาร์จต้องมากกว่าก่อนชาร์จ และไม่เกิน 100%");
+  if (!CH.blob) err.push("ภาพใบเสร็จ"); if (!o.cNo.trim()) err.push("เลขที่ใบเสร็จ"); if (!(k > 0)) err.push("kWh"); if (!(tot > 0)) err.push("รวมทั้งสิ้น");
+  if (err.length) { $("cErr").textContent = "กรุณาตรวจ: " + err.join(", "); $("cErr").hidden = false; return; }
+  const btn = $("cSave"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span>กำลังบันทึก…`;
+  try {
+    const path = await upload(CH.vid, "receipt", CH.blob);
+    const startedAt = new Date(run.ms).toISOString(), endedAt = new Date().toISOString();
+    const rec = { vehicle_id: CH.vid, employee_id: ME.employee?.id || null, started_at: startedAt, ended_at: endedAt, station: o.cSt.trim(), soc_before: a, soc_after: b, receipt_no: o.cNo.trim(), receipt_date: today(), ev_ref: o.cRef.trim() || null, kwh: k, unit_price: 7.0093, subtotal: parseFloat(o.cSub) || null, vat: parseFloat(o.cVat) || null, total: tot, receipt_path: path, source: "app" };
+    await q(sb.from("charging_records").insert(rec));
+    setRun(null); CH.blob = null; CH.url = null;
+    const v = vById(rec.vehicle_id), endHM = nowHM();
+    const text = `${v.code} (${v.plate}) ชาร์จไฟฟ้าเรียบร้อย\n${bk(today())} เวลา ${run.start}–${endHM} น.\nแบต ${a}% → ${b}% · ${fmt(k, 2)} kWh\nค่าไฟฟ้า ${fmt(tot)} บาท · ใบเสร็จ ${rec.receipt_no}\n${rec.station} · ${ME.employee?.name || PROFILE.display_name}`;
+    main().innerHTML = `<section style="padding-top:20px;display:flex;flex-direction:column;gap:12px"><span class="pill ok" style="margin:0;align-self:flex-start">✓ บันทึกการชาร์จแล้ว</span>
+     <div class="sum" style="grid-template-columns:1fr 1fr"><div class="tile"><small>เวลาชาร์จ</small><b class="num">${run.start}–${endHM}</b></div><div class="tile"><small>แบตเตอรี่</small><b class="num">${a}% → ${b}%</b></div><div class="tile"><small>พลังงาน</small><b class="num">${fmt(k, 2)} kWh</b></div><div class="tile"><small>ค่าไฟรวม VAT</small><b class="num">${fmt(tot)}</b></div></div>
+     <div class="card"><pre style="margin:0;white-space:pre-wrap;font:inherit;line-height:1.6">${esc(text)}</pre></div>
+     <button class="btn block" id="cp">คัดลอกข้อความส่งกลุ่ม LINE</button><a class="btn pri block" href="#home">กลับหน้าหลัก</a><button class="lnk" id="again">เริ่มบันทึกการชาร์จครั้งถัดไป</button></section>`;
+    $("cp").onclick = () => copyText(text); $("again").onclick = () => charge();
+  } catch (e) { $("cErr").textContent = errMsg(e); $("cErr").hidden = false; btn.disabled = false; btn.textContent = "บันทึกการชาร์จ"; }
+}
+
+/* ================= MAINTENANCE + ACCIDENTS ================= */
+const TYPES = ["PM ตามระยะ", "ซ่อมแก้ไข (CM)", "ระบบปรับอากาศ", "ยางและช่วงล่าง", "เบรก", "แบตเตอรี่/ไฟฟ้าแรงสูง", "ระบบไฟฟ้า 12V", "ประตู/ทางลาด", "ตัวถัง/กระจก", "อุบัติเหตุ", "อื่น ๆ"];
+const STEPS = ["แจ้งซ่อม", "กำลังซ่อม", "ซ่อมเสร็จ"], AST = ["เปิดเรื่อง", "รอซ่อม/รอเคลม", "ปิดเรื่อง"];
+const KINDS = ["ชนรถยนต์", "ชนรถจักรยานยนต์", "เฉี่ยวชน/ขูดขีด", "ชนคน/จักรยาน", "ชนวัตถุ/ขอบทาง", "ผู้โดยสารบาดเจ็บในรถ", "ถูกชนขณะจอด", "อื่น ๆ"];
+const FAULT = { pending: "รอสรุปฝ่ายผิด", us: "ฝ่ายเราผิด", other: "คู่กรณีผิด", none: "ไม่มีฝ่ายผิด" };
+let mTab = "M";
+async function maint() {
+  if ((location.hash || "").includes("accident")) mTab = "A";
+  const canAct = isMgr() || role() === "MAINTENANCE";
+  const [jobs, accs, costs, emps] = await Promise.all([
+    q(sb.from("maintenance_jobs").select("*").order("reported_on", { ascending: false }).limit(100)),
+    q(sb.from("accidents").select("*").order("occurred_at", { ascending: false }).limit(100)),
+    isMgr() ? q(sb.from("maintenance_costs").select("*")) : Promise.resolve([]),
+    isMgr() ? q(sb.from("employees").select("id,full_name")) : Promise.resolve([]),
+  ]);
+  const cost = (id) => costs.find((c) => c.job_id === id)?.cost;
+  const name = (id) => emps.find((e) => e.id === id)?.full_name || (id === ME.employee?.id ? ME.employee.name : "");
+  const pics = async (paths) => (await signed(paths)).map((u) => `<img src="${u}" data-view alt="รูปประกอบ">`).join("");
+  const m = today().slice(0, 7);
+  const jobHTML = async (j) => { const v = vById(j.vehicle_id) || { code: "", plate: "" }; const c = cost(j.id);
+    return `<details class="job" style="--c:${COLOR[v.code]}"><summary><div class="row1"><b>${v.code}</b><span class="type">${esc(j.job_type)}</span><span class="pill ${["bad", "warn", "ok"][j.status]}">${STEPS[j.status]}</span></div><div class="desc">${esc(j.description)}</div><div class="meta num"><span>แจ้ง ${bk(j.reported_on)}</span>${j.vehicle_stopped ? "<span>รถหยุดวิ่ง</span>" : ""}${c != null ? `<span>${fmt(c)} บาท</span>` : ""}</div></summary>
+     <div class="jb"><dl class="kv num"><dt>เลขไมล์</dt><dd>${j.odometer ? fmt(j.odometer, 0) + " กม." : "–"}</dd><dt>ผู้ซ่อม</dt><dd>${esc(j.shop) || "–"}</dd><dt>เริ่มซ่อม</dt><dd>${bk(j.started_on)}</dd><dt>ซ่อมเสร็จ</dt><dd>${bk(j.done_on)}</dd>${j.work_done ? `<dt>สิ่งที่ซ่อม</dt><dd>${esc(j.work_done)}</dd>` : ""}${isMgr() ? `<dt>ผู้แจ้ง</dt><dd>${esc(name(j.reported_by)) || "–"}</dd>` : ""}</dl>
+     ${j.photo_paths?.length ? `<div class="pics">${await pics(j.photo_paths)}</div>` : ""}
+     ${canAct && j.status < 2 ? `<div class="acts">${j.status === 0 ? `<button class="btn pri" data-jstart="${j.id}">เริ่มซ่อม</button>` : ""}<button class="btn" data-jclose="${j.id}">ปิดงานซ่อม</button></div>` : ""}</div></details>`; };
+  const accHTML = async (a) => { const v = vById(a.vehicle_id) || { code: "" }; const inj = a.injured_passengers + a.injured_others;
+    return `<details class="job" style="--c:${COLOR[v.code]}"><summary><div class="row1"><b>${v.code}</b><span class="type">${esc(a.kind)}</span><span class="pill ${a.severity === "serious" ? "bad" : "warn"}">${a.severity === "serious" ? "รุนแรง" : "เล็กน้อย"}</span><span class="pill ${["bad", "warn", "ok"][a.status]}" style="margin-left:0">${AST[a.status]}</span></div><div class="desc">${esc(a.description)}</div><div class="meta num"><span>${bk(a.occurred_at)} ${tHM(a.occurred_at)}</span><span>${esc(a.place)}</span><span>${inj ? `บาดเจ็บ ${inj} คน` : "ไม่มีผู้บาดเจ็บ"}</span></div></summary>
+     <div class="jb"><dl class="kv"><dt>คู่กรณี</dt><dd>${a.has_counterparty ? "มี" + (a.counterparty_plate ? " · " + esc(a.counterparty_plate) : "") : "ไม่มี"}</dd><dt>ผู้บาดเจ็บ</dt><dd>ผู้โดยสาร ${a.injured_passengers} · คนขับ/คู่กรณี ${a.injured_others}</dd><dt>ฝ่ายผิด</dt><dd>${FAULT[a.fault]}</dd><dt>แจ้งความ</dt><dd>${esc(a.police_ref) || "–"}</dd><dt>เลขเคลม</dt><dd>${esc(a.claim_no) || "–"}</dd></dl>
+     ${a.photo_paths?.length ? `<div class="pics">${await pics(a.photo_paths)}</div>` : ""}
+     ${isMgr() && a.status < 2 ? `<div class="acts"><button class="btn" data-anext="${a.id}" data-s="${a.status + 1}">${a.status === 0 ? "เปลี่ยนเป็น รอซ่อม/รอเคลม" : "ปิดเรื่อง"}</button></div>` : ""}</div></details>`; };
+  const openJ = jobs.filter((j) => j.status < 2), doneJ = jobs.filter((j) => j.status === 2), openA = accs.filter((a) => a.status < 2), doneA = accs.filter((a) => a.status === 2);
+  const mm = accs.filter((a) => (a.occurred_at || "").startsWith(m));
+  main().innerHTML = `<div class="tabs2" role="tablist"><button id="tM" aria-selected="${mTab === "M"}">ซ่อมบำรุง</button><button id="tA" aria-selected="${mTab === "A"}">อุบัติเหตุ</button></div>
+   <div id="pM" ${mTab === "M" ? "" : "hidden"}><section class="sum"><div class="tile ${openJ.length ? "alert" : ""}"><small>งานที่ยังไม่เสร็จ</small><b class="num">${openJ.length}</b><span>รายการ</span></div><div class="tile"><small>ค่าซ่อมเดือนนี้</small><b class="num">${isMgr() ? fmt(doneJ.filter((j) => (j.done_on || "").startsWith(m)).reduce((s, j) => s + (cost(j.id) || 0), 0), 0) : "–"}</b><span>${isMgr() ? "บาท" : "เฉพาะผู้จัดการ"}</span></div><div class="tile"><small>หยุดวิ่ง (ค้าง)</small><b class="num">${openJ.filter((j) => j.vehicle_stopped).length}</b><span>คัน</span></div></section>
+    <h2>งานที่ยังไม่เสร็จ</h2><div class="list">${openJ.length ? (await Promise.all(openJ.map(jobHTML))).join("") : `<div class="empty"><b>ไม่มีงานค้าง</b>รถทุกคันพร้อมใช้งาน</div>`}</div>
+    <h2>ประวัติ</h2><div class="list">${doneJ.length ? (await Promise.all(doneJ.map(jobHTML))).join("") : `<div class="empty"><b>ยังไม่มีประวัติการซ่อมบำรุง</b></div>`}</div>
+    ${myVehicles().length ? `<button class="btn pri block" id="newJob" style="margin-top:16px">+ บันทึกงานซ่อมบำรุง</button>` : ""}</div>
+   <div id="pA" ${mTab === "A" ? "" : "hidden"}><section class="sum"><div class="tile ${openA.length ? "alert" : ""}"><small>เรื่องที่ยังไม่ปิด</small><b class="num">${openA.length}</b><span>รายการ</span></div><div class="tile"><small>อุบัติเหตุเดือนนี้</small><b class="num">${mm.length}</b><span>ครั้ง</span></div><div class="tile"><small>ผู้บาดเจ็บเดือนนี้</small><b class="num">${mm.reduce((s, a) => s + a.injured_passengers + a.injured_others, 0)}</b><span>คน</span></div></section>
+    <h2>เรื่องที่ยังไม่ปิด</h2><div class="list">${openA.length ? (await Promise.all(openA.map(accHTML))).join("") : `<div class="empty"><b>ไม่มีเรื่องค้าง</b></div>`}</div>
+    <h2>ประวัติอุบัติเหตุ</h2><div class="list">${doneA.length ? (await Promise.all(doneA.map(accHTML))).join("") : `<div class="empty"><b>ยังไม่มีประวัติอุบัติเหตุ</b>เมื่อเกิดเหตุ ให้บันทึกทันทีพร้อมรูปที่เกิดเหตุ</div>`}</div>
+    ${myVehicles().length ? `<button class="btn danger block" id="newAcc" style="margin-top:16px">+ บันทึกอุบัติเหตุ</button>` : ""}</div>`;
+  $("tM").onclick = () => { mTab = "M"; history.replaceState(null, "", "#maint"); maint(); };
+  $("tA").onclick = () => { mTab = "A"; history.replaceState(null, "", "#maint/accident"); maint(); };
+  $("newJob") && ($("newJob").onclick = () => jobSheet());
+  $("newAcc") && ($("newAcc").onclick = () => accSheet());
+  main().querySelectorAll("[data-jstart]").forEach((b) => (b.onclick = async () => { try { await q(sb.from("maintenance_jobs").update({ status: 1, started_on: today() }).eq("id", b.dataset.jstart)); toast("เริ่มซ่อมแล้ว"); maint(); } catch (e) { toast(errMsg(e)); } }));
+  main().querySelectorAll("[data-jclose]").forEach((b) => (b.onclick = () => closeSheet(b.dataset.jclose)));
+  main().querySelectorAll("[data-anext]").forEach((b) => (b.onclick = async () => { const s = +b.dataset.s; try { await q(sb.from("accidents").update({ status: s, closed_on: s === 2 ? today() : null }).eq("id", b.dataset.anext)); toast(AST[s]); maint(); } catch (e) { toast(errMsg(e)); } }));
+}
+function picsInput(id, store) { return `<label class="btn block" style="border-style:dashed">+ แนบรูป<input type="file" accept="image/*" multiple id="${id}"></label><div class="pics" id="${id}Prev"></div>`; }
+function bindPics(id, store) { $(id).onchange = async (e) => { for (const f of e.target.files) { const b = await shrink(f); if (b) store.push(b); } e.target.value = ""; $(id + "Prev").innerHTML = store.map((b) => `<img src="${URL.createObjectURL(b)}" alt="">`).join(""); }; }
+function jobSheet() {
+  const vs = myVehicles(); let vid = vs[0].id, type = TYPES[1]; const pics = [];
+  const s = $("sheet");
+  const draw = () => { s.innerHTML = `<div class="in"><div class="sh"><b>บันทึกงานซ่อมบำรุง</b><button class="lnk" id="shX">ปิด</button></div>${busPicker(vs, vid)}
+    <p class="lbl">ประเภทงาน</p><div class="chips" id="jT">${TYPES.map((t) => `<button class="chip" aria-pressed="${t === type}" data-t="${t}">${t}</button>`).join("")}</div>
+    <div class="grid"><div class="fld full" id="wD"><label for="jD">อาการ / รายละเอียดงาน</label><textarea id="jD" placeholder="เช่น แอร์ไม่เย็น ห้องโดยสารด้านหลัง"></textarea></div>
+    <div class="fld"><label for="jOdo">เลขไมล์ (กม.)</label><input id="jOdo" inputmode="numeric"></div><div class="fld"><label for="jStop">รถหยุดวิ่ง</label><select id="jStop"><option value="0">ไม่หยุดวิ่ง</option><option value="1">หยุดวิ่ง</option></select></div>
+    <div class="fld full"><label for="jShop">ผู้ซ่อม / ศูนย์บริการ</label><input id="jShop"></div><div class="fld full"><label for="jClaim">เคลมประกัน</label><select id="jClaim"><option value="no">ไม่เคลม</option><option value="yes">เคลมประกัน (ฟอลคอน)</option><option value="warranty">ประกันผู้ผลิต</option></select></div></div>
+    ${picsInput("jP")}<p class="err" id="jErr" hidden></p><button class="btn pri block" id="jSave">บันทึกแจ้งซ่อม</button></div>`;
+    s.hidden = false; $("shX").onclick = () => (s.hidden = true);
+    s.querySelectorAll("[data-b]").forEach((b) => (b.onclick = () => { vid = b.dataset.b; draw(); }));
+    $("jT").onclick = (e) => { const c = e.target.closest(".chip"); if (!c) return; type = c.dataset.t; $("jT").querySelectorAll(".chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c))); };
+    bindPics("jP", pics);
+    $("jSave").onclick = async () => { const d = $("jD").value.trim(); if (!d) { $("wD").classList.add("err"); return; }
+      $("jSave").disabled = true;
+      try { const paths = []; for (let i = 0; i < pics.length; i++) paths.push(await upload(vid, "maintenance", pics[i], i));
+        await q(sb.from("maintenance_jobs").insert({ vehicle_id: vid, job_type: type, description: d, reported_on: today(), odometer: +$("jOdo").value.replace(/\D/g, "") || null, shop: $("jShop").value.trim() || null, vehicle_stopped: $("jStop").value === "1", claim: $("jClaim").value, reported_by: ME.employee?.id || null, photo_paths: paths }));
+        s.hidden = true; toast("บันทึกแจ้งซ่อมแล้ว"); mTab = "M"; maint();
+      } catch (e) { $("jErr").textContent = errMsg(e); $("jErr").hidden = false; $("jSave").disabled = false; } };
+  }; draw();
+}
+function closeSheet(id) {
+  const s = $("sheet"), pics = [];
+  s.innerHTML = `<div class="in"><div class="sh"><b>ปิดงานซ่อม</b><button class="lnk" id="shX">ปิด</button></div>
+   <div class="grid"><div class="fld"><label for="xD">วันที่ซ่อมเสร็จ</label><input id="xD" type="date" value="${today()}"></div>${isMgr() ? `<div class="fld"><label for="xC">ค่าใช้จ่าย (บาท)</label><input id="xC" inputmode="decimal" placeholder="0.00"></div>` : ""}
+   <div class="fld full"><label for="xW">สิ่งที่ซ่อม / อะไหล่ที่เปลี่ยน</label><textarea id="xW"></textarea></div></div>${picsInput("xP")}
+   ${isMgr() ? "" : `<p class="sm">ค่าใช้จ่ายให้ผู้จัดการบันทึก</p>`}<p class="err" id="xErr" hidden></p><button class="btn pri block" id="xSave">ยืนยันซ่อมเสร็จ</button></div>`;
+  s.hidden = false; $("shX").onclick = () => (s.hidden = true); bindPics("xP", pics);
+  $("xSave").onclick = async () => {
+    const c = isMgr() ? parseFloat($("xC").value) : null;
+    if (isMgr() && !(c >= 0)) { $("xErr").textContent = "กรุณาระบุค่าใช้จ่าย ใส่ 0 ถ้าไม่มีค่าใช้จ่าย"; $("xErr").hidden = false; return; }
+    $("xSave").disabled = true;
+    try { const job = await q(sb.from("maintenance_jobs").select("vehicle_id,photo_paths,started_on").eq("id", id).single());
+      const paths = [...(job.photo_paths || [])]; for (let i = 0; i < pics.length; i++) paths.push(await upload(job.vehicle_id, "maintenance", pics[i], i));
+      await q(sb.from("maintenance_jobs").update({ status: 2, done_on: $("xD").value || today(), started_on: job.started_on || today(), work_done: $("xW").value.trim() || null, photo_paths: paths }).eq("id", id));
+      if (isMgr()) await q(sb.from("maintenance_costs").upsert({ job_id: id, cost: c }));
+      s.hidden = true; toast("ปิดงานซ่อมแล้ว"); maint();
+    } catch (e) { $("xErr").textContent = errMsg(e); $("xErr").hidden = false; $("xSave").disabled = false; }
+  };
+}
+function accSheet() {
+  const vs = myVehicles(); let vid = vs[0].id, kind = KINDS[0], sev = "minor"; const pics = [];
+  const s = $("sheet");
+  const draw = () => { s.innerHTML = `<div class="in"><div class="sh"><b>บันทึกอุบัติเหตุ</b><button class="lnk" id="shX">ปิด</button></div>${busPicker(vs, vid)}
+    <div class="grid"><div class="fld"><label for="aD">วันที่</label><input id="aD" type="date" value="${today()}"></div><div class="fld"><label for="aT">เวลา</label><input id="aT" type="time" value="${nowHM()}"></div>
+    <div class="fld full" id="wP"><label for="aP">สถานที่เกิดเหตุ</label><input id="aP" placeholder="เช่น หน้าสถานี รฟม."></div></div>
+    <p class="lbl">ลักษณะเหตุ</p><div class="chips" id="aK">${KINDS.map((k) => `<button class="chip" aria-pressed="${k === kind}" data-k="${k}">${k}</button>`).join("")}</div>
+    <p class="lbl">ความรุนแรง</p><div class="chips" id="aS"><button class="chip" aria-pressed="${sev === "minor"}" data-s="minor">เล็กน้อย</button><button class="chip" aria-pressed="${sev === "serious"}" data-s="serious">รุนแรง</button></div>
+    <div class="grid"><div class="fld full" id="wDe"><label for="aDe">เหตุการณ์โดยสรุป</label><textarea id="aDe" placeholder="เกิดอะไรขึ้น ความเสียหายของรถ และสิ่งที่ทำหลังเกิดเหตุ"></textarea></div>
+    <div class="fld"><label for="aCp">คู่กรณี</label><select id="aCp"><option value="0">ไม่มี</option><option value="1">มี</option></select></div><div class="fld"><label for="aCpP">ทะเบียนคู่กรณี</label><input id="aCpP"></div>
+    <div class="fld"><label for="aIp">บาดเจ็บ ผู้โดยสาร</label><input id="aIp" inputmode="numeric" value="0"></div><div class="fld"><label for="aIo">บาดเจ็บ คนขับ/คู่กรณี</label><input id="aIo" inputmode="numeric" value="0"></div>
+    <div class="fld"><label for="aF">ฝ่ายผิด</label><select id="aF">${Object.entries(FAULT).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div><div class="fld"><label for="aSt">รถหยุดวิ่ง</label><select id="aSt"><option value="0">ไม่หยุด</option><option value="1">หยุดวิ่ง</option></select></div>
+    <div class="fld"><label for="aPo">แจ้งความ/บันทึกประจำวัน</label><input id="aPo"></div><div class="fld"><label for="aCl">เลขเคลมประกัน</label><input id="aCl"></div></div>
+    ${picsInput("aPx")}<label class="sm" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="aJob" checked style="width:20px;height:20px">สร้างงานซ่อมในเมนูซ่อมบำรุงให้ด้วย</label>
+    <p class="err" id="aErr" hidden></p><button class="btn danger block" id="aSave">บันทึกอุบัติเหตุ</button></div>`;
+    s.hidden = false; $("shX").onclick = () => (s.hidden = true);
+    s.querySelectorAll("[data-b]").forEach((b) => (b.onclick = () => { vid = b.dataset.b; draw(); }));
+    $("aK").onclick = (e) => { const c = e.target.closest(".chip"); if (!c) return; kind = c.dataset.k; $("aK").querySelectorAll(".chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c))); };
+    $("aS").onclick = (e) => { const c = e.target.closest(".chip"); if (!c) return; sev = c.dataset.s; $("aS").querySelectorAll(".chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c))); };
+    bindPics("aPx", pics);
+    $("aSave").onclick = async () => { const place = $("aP").value.trim(), desc = $("aDe").value.trim(); $("wP").classList.toggle("err", !place); $("wDe").classList.toggle("err", !desc); if (!place || !desc) return;
+      $("aSave").disabled = true;
+      try { const paths = []; for (let i = 0; i < pics.length; i++) paths.push(await upload(vid, "accident", pics[i], i));
+        const rec = { vehicle_id: vid, occurred_at: `${$("aD").value}T${$("aT").value || "00:00"}:00+07:00`, place, driver_employee_id: ME.employee?.id || null, kind, severity: sev, description: desc, has_counterparty: $("aCp").value === "1", counterparty_plate: $("aCpP").value.trim() || null, injured_passengers: +$("aIp").value || 0, injured_others: +$("aIo").value || 0, fault: $("aF").value, vehicle_stopped: $("aSt").value === "1", police_ref: $("aPo").value.trim() || null, claim_no: $("aCl").value.trim() || null, photo_paths: paths };
+        const ins = await q(sb.from("accidents").insert(rec).select("id").single());
+        if ($("aJob").checked) await q(sb.from("maintenance_jobs").insert({ vehicle_id: vid, job_type: "อุบัติเหตุ", description: `ซ่อมจากอุบัติเหตุ ${bk($("aD").value)}: ${desc}`, reported_on: today(), vehicle_stopped: rec.vehicle_stopped, claim: rec.claim_no ? "yes" : "no", accident_id: ins.id, reported_by: ME.employee?.id || null }));
+        s.hidden = true; toast("บันทึกอุบัติเหตุแล้ว"); mTab = "A"; maint();
+      } catch (e) { $("aErr").textContent = errMsg(e); $("aErr").hidden = false; $("aSave").disabled = false; } };
+  }; draw();
+}
+
+/* ================= VEHICLE ================= */
+async function vehicle() {
+  const vs = myVehicles();
+  if (!vs.length) { main().innerHTML = `<div class="empty" style="margin-top:16px"><b>วันนี้ไม่มีรถที่ได้รับมอบหมาย</b>ข้อมูลรถแสดงเฉพาะคันที่คุณขับในวันนั้น</div>`; return; }
+  const [pols, prem] = await Promise.all([role() === "CUSTOMER" ? Promise.resolve([]) : q(sb.from("insurance_policies").select("*")), isMgr() ? q(sb.from("insurance_premiums").select("*")) : Promise.resolve([])]);
+  const left = (p) => Math.round((new Date(p.period_to) - Date.now()) / 864e5);
+  const totalPrem = prem.reduce((s, p) => s + Number(p.total), 0);
+  main().innerHTML = `${isMgr() ? `<section class="sum"><div class="tile"><small>รถทั้งหมด</small><b class="num">${VEH.length}</b><span>คัน</span></div><div class="tile"><small>ประกันหมดอายุ</small><b class="num">${pols[0] ? left(pols[0]) + " วัน" : "–"}</b><span>${pols[0] ? bk(pols[0].period_to) : ""}</span></div><div class="tile"><small>เบี้ยประกันรวม/ปี</small><b class="num">${fmt(totalPrem, 0)}</b><span>บาท</span></div></section>` : ""}
+   <h2>${vs.length > 1 ? "รถโดยสาร" : "รถของคุณ"} <small>แตะเพื่อดูรายละเอียด</small></h2><div class="list">${vs.map((v) => { const ps = pols.filter((p) => p.vehicle_id === v.id), vol = ps.find((p) => p.kind === "voluntary"), ctp = ps.find((p) => p.kind === "ctp"), pr = (p) => p && prem.find((x) => x.policy_id === p.id);
+     return `<details class="job" style="--c:${COLOR[v.code]}"><summary style="display:grid;grid-template-columns:86px 1fr;gap:12px"><img src="${busImg(v.code)}" alt="" style="width:86px;height:86px;border-radius:12px;object-fit:cover"><div class="b" style="display:flex;flex-direction:column;gap:3px;min-width:0"><div class="row1"><b>${v.code}</b><span class="plate num">${v.plate}</span></div><div class="sm">${ROUTE[v.route_code] || ""}</div><div class="sm" style="font-family:ui-monospace,monospace">${v.chassis || ""}</div></div></summary>
+     <div class="jb"><dl class="kv"><dt>ยี่ห้อ/รุ่น</dt><dd>${esc(v.brand_model)}</dd>${v.model_label ? `<dt>รุ่นตามป้ายในรถ</dt><dd>${esc(v.model_label)}</dd>` : ""}<dt>ปีรถ</dt><dd>${v.model_year}</dd><dt>ที่นั่ง / กำลัง</dt><dd>${v.seats} ที่นั่ง · ${v.hp} HP</dd><dt>ความจุแบตเตอรี่</dt><dd class="wait">${v.battery_kwh ? v.battery_kwh + " kWh" : "รอข้อมูล"}</dd><dt>การใช้รถ</dt><dd>${esc(v.use_type)}</dd></dl>
+     ${vol ? `<p class="lbl">ประกันภัยรถยนต์ไฟฟ้า (ภาคสมัครใจ)</p><dl class="kv"><dt>เลขกรมธรรม์</dt><dd>${vol.policy_no}</dd><dt>บริษัทประกัน</dt><dd>${esc(vol.insurer)}</dd><dt>ระยะเวลา</dt><dd>${bk(vol.period_from)} – ${bk(vol.period_to)}</dd><dt>เหลือ</dt><dd>${left(vol)} วัน</dd>${isMgr() ? `<dt>ทุนประกัน</dt><dd class="num">${fmt(vol.sum_insured)} บาท</dd><dt>เบี้ยรวม</dt><dd class="num">${pr(vol) ? fmt(pr(vol).total) : "–"} บาท</dd><dt>ผู้รับประโยชน์</dt><dd>${esc(vol.beneficiary)}</dd>` : ""}</dl>` : ""}
+     ${ctp ? `<p class="lbl">พ.ร.บ.</p><dl class="kv"><dt>เลขกรมธรรม์</dt><dd>${ctp.policy_no}</dd><dt>ระยะเวลา</dt><dd>${bk(ctp.period_from)} – ${bk(ctp.period_to)}</dd>${isMgr() ? `<dt>เบี้ยรวม</dt><dd class="num">${pr(ctp) ? fmt(pr(ctp).total) : "–"} บาท</dd>` : ""}</dl>` : ""}</div></details>`; }).join("")}</div>`;
+}
+
+/* ================= REPORT (managers) ================= */
+let rpMode = "week", rpStart = null, rpA = "2026-10-16", rpB = "2026-10-20";
+const monday = (d) => { const x = dObj(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+async function report() {
+  if (!rpStart) rpStart = new Date(2026, 9, 1);
+  let a, b, label;
+  if (rpMode === "week") { a = rpA; b = rpB; label = `${bk(a)} – ${bk(b)}`; }
+  else { a = iso(new Date(rpStart.getFullYear(), rpStart.getMonth(), 1)); b = iso(new Date(rpStart.getFullYear(), rpStart.getMonth() + 1, 0)); label = `${MONTH[rpStart.getMonth()]} ${rpStart.getFullYear() + 543}`; }
+  const R = (await q(sb.from("charging_records").select("*").gte("receipt_date", a).lte("receipt_date", b).order("receipt_date"))).map((r) => ({ ...r, bus: vById(r.vehicle_id)?.code || "ไม่ระบุ", amt: Number(r.total), kwh: Number(r.kwh) }));
+  const sum = (l, f) => l.reduce((s, x) => s + f(x), 0), T = sum(R, (r) => r.amt), K = sum(R, (r) => r.kwh);
+  const buses = ["STC-01", "STC-02", "STC-03", "STC-04", "ไม่ระบุ"].filter((x) => R.some((r) => r.bus === x));
+  const days = [...new Set(R.map((r) => r.receipt_date))];
+  main().innerHTML = `<div class="tabs2"><button id="rW" aria-selected="${rpMode === "week"}">ช่วงเบิกเงินสำรอง</button><button id="rM" aria-selected="${rpMode === "month"}">รายเดือน</button></div>
+   ${rpMode === "week" ? `<div class="grid" style="margin-top:12px"><div class="fld"><label for="rA">ตั้งแต่วันที่</label><input type="date" id="rA" value="${rpA}"></div><div class="fld"><label for="rB">ถึงวันที่</label><input type="date" id="rB" value="${rpB}"></div></div><p class="sm" style="margin:6px 0 0">ช่วงเบิกเงินสำรอง ${label}</p>` : `<div class="wk"><button id="rPrev" aria-label="เดือนก่อน">‹</button><div>${label}<small>สรุปค่าไฟฟ้าประจำเดือน</small></div><button id="rNext" aria-label="เดือนถัดไป">›</button></div>`}
+   ${R.length ? `<section class="hero"><small>ค่าไฟฟ้ารวม (รวม VAT)</small><div class="big num">${fmt(T)}<span>บาท</span></div><div class="kpis num"><div><b>${fmt(K, 2)}</b><span>kWh</span></div><div><b>${R.length}</b><span>ครั้งที่ชาร์จ</span></div><div><b>${K ? fmt(T / K) : "–"}</b><span>บาท/kWh</span></div></div></section>
+   <h2>ค่าไฟฟ้ารายวัน <small>บาท</small></h2><section class="card"><div class="legend"><span><i style="--c:var(--blue)"></i>รวมทุกคัน</span></div><div class="chart" id="rc"></div></section>
+   <h2>แยกรายคัน</h2><section class="card">${buses.map((x) => { const l = R.filter((r) => r.bus === x), aa = sum(l, (r) => r.amt), mx = Math.max(...buses.map((y) => sum(R.filter((r) => r.bus === y), (r) => r.amt))); return `<div class="busrow" style="--c:${SCOL[x]}"><div class="n"><i></i>${x}</div><div><div class="fill" style="width:${(aa / mx) * 100}%"></div><div class="v num"><span><b>${fmt(aa)}</b> บาท</span><span>${l.length} ครั้ง</span><span>${fmt(sum(l, (r) => r.kwh), 1)} kWh</span><span>${fmt(sum(l, (r) => r.kwh) / l.length, 1)} kWh/ครั้ง</span></div></div></div>`; }).join("")}</section>
+   ${R.some((r) => r.bus === "ไม่ระบุ") ? `<h2>ต้องตรวจสอบ</h2><p class="notice">ใบเสร็จไม่ระบุทะเบียน ${R.filter((r) => r.bus === "ไม่ระบุ").length} ใบ รวม ${fmt(sum(R.filter((r) => r.bus === "ไม่ระบุ"), (r) => r.amt))} บาท ยังแยกไม่ได้ว่าเป็นรถคันไหน</p>` : ""}
+   <h2>รายการใบเสร็จ</h2><section class="card" style="overflow-x:auto"><table class="t"><thead><tr><th>วันที่</th><th>เลขที่ใบเสร็จ</th><th>รถ</th><th class="r">kWh</th><th class="r">บาท</th></tr></thead><tbody>${R.map((r) => `<tr><td class="num">${bk(r.receipt_date)}</td><td class="num">${r.receipt_no || "–"}</td><td>${r.bus}</td><td class="r num">${fmt(r.kwh, 2)}</td><td class="r num">${fmt(r.amt)}</td></tr>`).join("")}<tr><td colspan="3"><b>รวม</b></td><td class="r num"><b>${fmt(K, 2)}</b></td><td class="r num"><b>${fmt(T)}</b></td></tr></tbody></table></section>
+   <button class="btn block" id="rCopy" style="margin-top:12px">คัดลอกสรุปส่งเบิก</button>` : `<div class="empty" style="margin-top:12px"><b>ไม่มีบันทึกการชาร์จในช่วงนี้</b>ข้อมูลใบเสร็จจริงที่นำเข้าอยู่ในช่วง 16–20 ต.ค. 2569</div>`}`;
+  $("rW").onclick = () => { rpMode = "week"; report(); };
+  $("rM").onclick = () => { rpMode = "month"; report(); };
+  if (rpMode === "week") { $("rA").onchange = (e) => { if (e.target.value) { rpA = e.target.value; if (rpB < rpA) rpB = rpA; report(); } }; $("rB").onchange = (e) => { if (e.target.value) { rpB = e.target.value; if (rpB < rpA) rpA = rpB; report(); } }; }
+  else { $("rPrev").onclick = () => { rpStart.setMonth(rpStart.getMonth() - 1); report(); }; $("rNext").onclick = () => { rpStart.setMonth(rpStart.getMonth() + 1); report(); }; }
+  if (!R.length) return;
+  $("rCopy").onclick = () => copyText(`สรุปค่าไฟฟ้า MRTA Shuttle Bus ${label}\n` + buses.map((x) => { const l = R.filter((r) => r.bus === x); return `${x}: ${l.length} ครั้ง ${fmt(sum(l, (r) => r.kwh), 1)} kWh ${fmt(sum(l, (r) => r.amt))} บาท`; }).join("\n") + `\nรวม ${R.length} ครั้ง ${fmt(K, 1)} kWh ${fmt(T)} บาท · แนบใบเสร็จ ${R.length} ใบ`);
+  // line chart
+  const W = 360, H = 230, ml = 44, mr = 14, mt = 24, mb = 30, pw = W - ml - mr, ph = H - mt - mb;
+  const vals = days.map((d) => sum(R.filter((r) => r.receipt_date === d), (r) => r.amt));
+  const vmax = Math.max(...vals), st = vmax > 1500 ? 500 : vmax > 600 ? 250 : 100, ymax = Math.ceil((vmax * 1.12) / st) * st, y = (v) => mt + ph - (v / ymax) * ph, X = (i) => ml + (days.length === 1 ? pw / 2 : (i * pw) / (days.length - 1));
+  let g = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="ค่าไฟฟ้ารายวัน"><defs><linearGradient id="ar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1fc2ff" stop-opacity=".28"/><stop offset="1" stop-color="#1fc2ff" stop-opacity="0"/></linearGradient></defs>`;
+  for (let v = 0; v <= ymax; v += st) g += `<line x1="${ml}" x2="${W - mr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${ml - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${v.toLocaleString("th-TH")}</text>`;
+  const skip = Math.ceil(days.length / 7);
+  days.forEach((d, i) => { if (i % skip === 0 || i === days.length - 1) { const x = dObj(d); g += `<text x="${X(i)}" y="${H - 9}" text-anchor="middle" font-size="11" fill="var(--muted)">${DOW[x.getDay()]} ${x.getDate()}</text>`; } });
+  const pts = vals.map((v, i) => `${X(i)},${y(v)}`).join(" ");
+  g += `<polygon points="${X(0)},${y(0)} ${pts} ${X(days.length - 1)},${y(0)}" fill="url(#ar)"/><polyline points="${pts}" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linejoin="round"/>`;
+  vals.forEach((v, i) => { g += `<circle cx="${X(i)}" cy="${y(v)}" r="4.5" fill="var(--blue)" stroke="var(--card)" stroke-width="2"/>`; if (days.length <= 7) g += `<text x="${X(i)}" y="${y(v) - 10}" text-anchor="middle" font-size="11" font-weight="600" fill="var(--fg)">${fmt(v, 0)}</text>`; });
+  $("rc").innerHTML = g + `</svg>`;
+}
+
+/* ================= ACCOUNT / PASSWORD ================= */
+async function account() {
+  main().innerHTML = `<section class="card" style="margin-top:16px"><dl class="kv"><dt>ชื่อผู้ใช้</dt><dd>${esc(PROFILE.username)}</dd><dt>ชื่อ</dt><dd>${esc(PROFILE.display_name)}</dd><dt>บทบาท</dt><dd>${ROLE_TH[PROFILE.role]}</dd>${ME.employee ? `<dt>ประเภท</dt><dd>${{ regular: "คนขับประจำ", relief: "คนขับแทน", spare: "คนขับสำรอง", manager: "ผู้จัดการ", technician: "ช่าง", admin: "ผู้ดูแลระบบ", customer: "ลูกค้า" }[ME.employee.kind]}</dd>` : ""}</dl></section>
+   <a class="btn block" href="#password" style="margin-top:12px">เปลี่ยนรหัสผ่าน</a><button class="btn danger block" id="out" style="margin-top:10px">ออกจากระบบ</button>
+   <p class="sm" style="margin-top:16px">เพิ่มแอปลงหน้าจอมือถือ: iPhone กด แชร์ → เพิ่มไปยังหน้าจอโฮม · Android กด ⋮ → เพิ่มลงในหน้าจอหลัก</p>`;
+  $("out").onclick = async () => { await sb.auth.signOut(); location.replace("index.html"); };
+}
+async function password() {
+  const forced = PROFILE.must_change_password;
+  main().innerHTML = `${forced ? `<p class="notice" style="margin-top:16px">เข้าสู่ระบบครั้งแรก กรุณาตั้งรหัสผ่านใหม่ก่อนใช้งาน</p>` : ""}
+   <div class="grid" style="margin-top:14px"><div class="fld full" id="w1"><label for="p1">รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)</label><input id="p1" type="password" autocomplete="new-password"></div><div class="fld full" id="w2"><label for="p2">ยืนยันรหัสผ่านใหม่</label><input id="p2" type="password" autocomplete="new-password"></div></div>
+   <p class="err" id="pErr" hidden></p><button class="btn pri block" id="pSave" style="margin-top:12px">บันทึกรหัสผ่าน</button>${forced ? "" : `<a class="lnk" href="#account">ยกเลิก</a>`}`;
+  $("pSave").onclick = async () => {
+    const a = $("p1").value, b = $("p2").value, e = $("pErr");
+    if (a.length < 8) { e.textContent = "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร"; e.hidden = false; return; }
+    if (a !== b) { e.textContent = "รหัสผ่านทั้งสองช่องไม่ตรงกัน"; e.hidden = false; return; }
+    if (a === PROFILE.display_name || a.toLowerCase() === PROFILE.username.toLowerCase()) { e.textContent = "ห้ามใช้ชื่อหรือชื่อผู้ใช้เป็นรหัสผ่าน"; e.hidden = false; return; }
+    $("pSave").disabled = true;
+    const { error } = await sb.auth.updateUser({ password: a });
+    if (error) { e.textContent = errMsg(error); e.hidden = false; $("pSave").disabled = false; return; }
+    await sb.rpc("password_changed"); PROFILE.must_change_password = false; toast("ตั้งรหัสผ่านใหม่แล้ว"); location.hash = "#home";
+  };
+}
+
+boot();
