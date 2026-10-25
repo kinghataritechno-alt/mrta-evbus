@@ -190,3 +190,42 @@ table.t tr:last-child td{border-bottom:0}
 .rt dt{font-size:.74rem;color:var(--muted)}.rt dd{margin:0;font-size:1.05rem;font-weight:700}
 @media (prefers-reduced-motion:reduce){.live,.spin{animation:none}}
 @media (max-width:380px){.ck .r{grid-template-columns:1fr 136px}}
+
+/* ---- schedule PDF documents (white A4 pages, rendered by html2pdf) ---- */
+.docwrap{margin-top:12px;overflow:hidden}
+.docscale{transform-origin:top left}
+.doc{font-family:"IBM Plex Sans Thai",sans-serif;color:#0f1b3d;font-size:12.5px;line-height:1.42}
+.doc .dpg{position:relative;overflow:hidden;background:#fff;padding:0 34px 40px;box-sizing:border-box;margin-bottom:12px;box-shadow:0 6px 20px rgba(0,0,0,.35)}
+.doc .dh{margin:0 -34px;padding:14px 34px;background:#000;color:#fff;display:flex;align-items:center;gap:14px}
+.doc .dm{width:50px;height:50px;border-radius:50%;background:#fff}
+.doc .dt{flex:1;min-width:0} .doc .dt h1{margin:0;font-size:19px;line-height:1.3;color:#fff} .doc .dt p{margin:0;font-size:11.5px;color:#b9c6e4}
+.doc .dco{display:flex;align-items:center;gap:8px} .doc .dco img{width:40px;height:40px} .doc .dco span{font-size:11px;line-height:1.35;font-weight:700;white-space:nowrap}
+.doc h2{font-size:14px;margin:12px 0 4px;color:#0b2a6b}
+.doc .dcards{display:flex;gap:8px;margin-top:12px}
+.doc .dcard{flex:1;border:1px solid #c9d3ea;border-top:4px solid var(--c);border-radius:6px;padding:6px 9px;display:flex;flex-direction:column;line-height:1.3}
+.doc .dcard b{font-size:13px} .doc .dcard span{font-size:10.5px;color:#4a5a80} .doc .dcard strong{font-size:22px;line-height:1.15}
+.doc table{width:100%;border-collapse:collapse}
+.doc .dtb{margin-top:6px;font-size:11.5px}
+.doc .dtb th{background:#0b2a6b;color:#fff;text-align:left;padding:4px 5px;white-space:nowrap}
+.doc .dtb th i,.doc .dtb td i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+.doc .dtb td{padding:2.6px 5px;border-bottom:1px solid #dde3f1;white-space:nowrap}
+.doc .dtb.sm td{padding:2.2px 5px}
+.doc .dtb tr.we td{background:#eef3ff} .doc .dtb tr.subr td{background:#fff4d6}
+.doc td.c{font-weight:700;text-align:right;width:44px} .doc td.r,.doc th.r{text-align:right}
+.doc td.pk,.doc .pk{color:#8a94ad;font-style:italic} .doc td.sub{background:#fff4d6;font-weight:700} .doc td.off,.doc .offt{color:#b42318} .doc td.sbx{color:#6b7896}
+.doc .q{display:inline-block;min-width:22px;text-align:center;font-size:10px;font-weight:700;border-radius:3px;background:#e3e9f7;color:#0b2a6b;padding:0 3px}
+.doc .n{color:#6b7896}
+.doc .dst{font-size:11.5px} .doc .dst th{text-align:left;border-bottom:2px solid #0b2a6b;padding:3px 5px} .doc .dst td{padding:2.5px 5px;border-bottom:1px solid #dde3f1}
+.doc .dnote{font-size:10.5px;color:#33406a;margin:6px 0 0}
+.doc .dinfo{display:grid;grid-template-columns:1.4fr 1.4fr 1fr 1fr;gap:8px;margin-top:12px}
+.doc .dinfo div{border:1px solid #c9d3ea;border-radius:6px;padding:5px 9px} .doc .dinfo small{display:block;font-size:10px;color:#4a5a80} .doc .dinfo b{font-size:13px}
+.doc .dsign{display:flex;gap:30px;margin-top:26px;text-align:center;font-size:11.5px} .doc .dsign div{flex:1;border-top:1px dotted #445;padding-top:5px}
+.doc .df{position:absolute;left:34px;right:34px;bottom:14px;display:flex;justify-content:space-between;font-size:9.5px;color:#6b7896;border-top:1px solid #dde3f1;padding-top:4px}
+.doc .dlg{margin-top:8px;font-size:9.5px;table-layout:fixed}
+.doc .dlg th,.doc .dlg td{border:1px solid #8a94ad;text-align:center;padding:2.5px 0;white-space:nowrap;overflow:hidden}
+.doc .dlg th{background:#e3e9f7;color:#0b2a6b} .doc .dlg th.we{background:#cfdaf3}
+.doc .dlg .nm{text-align:left;padding-left:4px;width:170px}
+.doc .dlg td.o{background:#e03131;color:#fff;font-weight:700} .doc .dlg td.cv{background:#ffe066;font-weight:700} .doc .dlg td.lv{background:#ffd8a8;font-weight:700}
+.doc .dlg td.lc{font-weight:700} .doc .dlg td.lc.o{background:#e03131;color:#fff} .doc .dlg td.lc.h{background:#ffe066} .doc .dlg td.lc.t{color:#c92a2a}
+.doc .dlg tr.tot td{font-weight:700;background:#f1f4fb}
+a.btn{text-decoration:none;display:flex;align-items:center;justify-content:center}

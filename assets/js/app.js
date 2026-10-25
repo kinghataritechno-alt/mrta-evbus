@@ -97,7 +97,7 @@ const NAV = () => [
 function drawNav() {
   $("nav").innerHTML = NAV().map(([k, l, p]) => `<a href="#${k}" data-k="${k}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${p}</svg>${l}</a>`).join("");
 }
-const PAGES = { home, schedule, inspect, charge, maint, vehicle, report, account, password };
+const PAGES = { home, schedule, inspect, charge, maint, vehicle, report, account, password, pdf: () => (window.pdfPage ? window.pdfPage() : Promise.reject(new Error("โหลดหน้าเอกสารไม่สำเร็จ ลองเปิดแอพใหม่"))) };
 function route() {
   let k = (location.hash || "#home").slice(1);
   if (PROFILE.must_change_password && k !== "password") k = "password";
@@ -105,7 +105,7 @@ function route() {
   if (k === "report" && !isMgr()) k = "home";
   document.querySelectorAll("#nav a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.k === k) || a.setAttribute("aria-current", a.dataset.k === k ? "page" : "false"));
   document.querySelectorAll("#nav a").forEach((a) => { if (a.dataset.k === k) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
-  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
+  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", pdf: "ตารางงาน (PDF)", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
   scrollTo(0, 0);
   loading();
   PAGES[k]().catch((e) => (main().innerHTML = `<p class="err">${esc(errMsg(e))}</p>`));
@@ -250,6 +250,7 @@ async function schedule() {
   const counts = { work: 0, off: 0, leave: 0, standby: 0 }; rows.forEach((r) => counts[r.status]++);
   main().innerHTML = `<div class="wk"><button id="mPrev" aria-label="รอบก่อน">‹</button><div>${periodLabel(schedMonth)}<small>${periodSpan(schedMonth)} · ${esc(ME.employee?.name || "")}</small></div><button id="mNext" aria-label="เดือนถัดไป">›</button></div>
    <section class="sum"><div class="tile"><small>วันทำงาน</small><b class="num">${counts.work}</b><span>วัน</span></div><div class="tile"><small>วันหยุด/ลา</small><b class="num">${counts.off + counts.leave}</b><span>วัน</span></div><div class="tile"><small>สำรอง</small><b class="num">${counts.standby}</b><span>วัน</span></div></section>
+   <a class="btn block" href="#pdf" style="margin-top:12px">ดูตารางงานของฉันเป็น PDF</a>
    <h2>รายวัน</h2><div class="list">${rows.length ? rows.map(dayRow).join("") : `<div class="empty"><b>ยังไม่มีตารางรอบนี้</b>ผู้จัดการยังไม่ได้จัดตาราง</div>`}</div>`;
   $("mPrev").onclick = () => { schedMonth.setMonth(schedMonth.getMonth() - 1); schedule(); };
   $("mNext").onclick = () => { schedMonth.setMonth(schedMonth.getMonth() + 1); schedule(); };
@@ -266,6 +267,7 @@ async function scheduleManager() {
     q(sb.from("employees").select("*").in("kind", ["regular", "relief", "spare"]).order("code")),
   ]);
   main().innerHTML = `<div class="wk"><button id="dPrev" aria-label="วันก่อน">‹</button><div>${bkLong(schedDay)}<small>ตารางปฏิบัติงาน · แตะชื่อเพื่อแก้ไข</small></div><button id="dNext" aria-label="วันถัดไป">›</button></div>
+   <a class="btn block" href="#pdf" style="margin-top:10px">ตารางงานประจำรอบ PDF · รวม / แยกรายคน</a>
    <div class="fld" style="margin-top:8px"><label for="dPick">ไปวันที่</label><input type="date" id="dPick" value="${schedDay}"></div>
    <h2>พนักงานขับรถ</h2><div class="list">${emps.map((e) => { const r = rows.find((x) => x.employee_id === e.id) || { status: null }; const v = vById(r.vehicle_id);
      return `<button class="day" style="text-align:left;cursor:pointer;${v ? `border-left:4px solid ${COLOR[v.code]}` : ""}" data-edit="${e.id}"><div class="d"><b style="font-size:.9rem">${esc(e.full_name.split(" ")[0])}</b><small>${{ regular: "ประจำ", relief: "ขับแทน", spare: "สแปร์" }[e.kind]}</small></div><div class="sm">${r.status ? { work: v ? `<b>${v.code}</b> · ${String(r.first_time || "").slice(0, 5)} ${esc(r.first_origin || "")}` : "ทำงาน", off: "วันหยุด", leave: "ลา " + esc(r.leave_type || ""), standby: "สำรอง" }[r.status] : "ยังไม่จัด"}${r.note ? `<em class="sub2">${esc(r.note)}</em>` : ""}</div></button>`; }).join("")}</div>`;
@@ -280,7 +282,7 @@ function editSched(emp, row) {
   s.innerHTML = `<div class="in"><div class="sh"><b>${esc(emp.full_name)} · ${bk(schedDay)}</b><button class="lnk" id="shX">ปิด</button></div>
    <div class="grid"><div class="fld"><label for="eSt">สถานะ</label><select id="eSt">${[["work", "ทำงาน"], ["off", "วันหยุด"], ["leave", "ลา"], ["standby", "สำรอง"]].map(([k, l]) => `<option value="${k}" ${row?.status === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
    <div class="fld"><label for="eV">รถ</label><select id="eV"><option value="">–</option>${VEH.map((v) => `<option value="${v.id}" ${row?.vehicle_id === v.id ? "selected" : ""}>${v.code}</option>`).join("")}</select></div>
-   <div class="fld"><label for="eLt">ประเภทการลา</label><select id="eLt"><option value="">–</option>${["ลาป่วย", "ลากิจ", "ลาพักร้อน", "อื่น ๆ"].map((x) => `<option ${row?.leave_type === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
+   <div class="fld"><label for="eLt">ประเภทการลา</label><select id="eLt"><option value="">–</option>${["ลาป่วย", "ลากิจ", "ลาพักร้อน", "ลาไม่รับค่าจ้าง", "อื่น ๆ"].map((x) => `<option ${row?.leave_type === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
    <div class="fld"><label for="eT">รอบแรก</label><input id="eT" type="time" value="${String(row?.first_time || "").slice(0, 5)}"></div>
    <div class="fld full"><label for="eO">ต้นทางรอบแรก</label><select id="eO">${["", "ศูนย์วัฒนธรรมฯ", "สถานี รฟม.", "รฟม. สำนักงานใหญ่", "MRT อิสรภาพ"].map((o) => `<option ${row?.first_origin === o ? "selected" : ""} value="${o}">${o || "–"}</option>`).join("")}</select></div>
    <div class="fld full"><label for="eN">หมายเหตุ</label><input id="eN" value="${esc(row?.note || "")}"></div></div>
@@ -583,16 +585,16 @@ async function vehicle() {
 let rpMode = "week", rpStart = null, rpA = "2026-10-16", rpB = "2026-10-20";
 const monday = (d) => { const x = dObj(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
 async function report() {
-  if (!rpStart) rpStart = periodOf(today());
+  if (!rpStart) { const t = dObj(today()); rpStart = new Date(t.getFullYear(), t.getMonth(), 1); }
   let a, b, label;
   if (rpMode === "week") { a = rpA; b = rpB; label = `${bk(a)} – ${bk(b)}`; }
-  else { [a, b] = periodRange(rpStart); label = periodLabel(rpStart); }
+  else { a = iso(new Date(rpStart.getFullYear(), rpStart.getMonth(), 1)); b = iso(new Date(rpStart.getFullYear(), rpStart.getMonth() + 1, 0)); label = `${MONTH[rpStart.getMonth()]} ${rpStart.getFullYear() + 543}`; }
   const R = (await q(sb.from("charging_records").select("*").gte("receipt_date", a).lte("receipt_date", b).order("receipt_date"))).map((r) => ({ ...r, bus: vById(r.vehicle_id)?.code || "ไม่ระบุ", amt: Number(r.total), kwh: Number(r.kwh) }));
   const sum = (l, f) => l.reduce((s, x) => s + f(x), 0), T = sum(R, (r) => r.amt), K = sum(R, (r) => r.kwh);
   const buses = ["STC-01", "STC-02", "STC-03", "STC-04", "ไม่ระบุ"].filter((x) => R.some((r) => r.bus === x));
   const days = [...new Set(R.map((r) => r.receipt_date))];
-  main().innerHTML = `<div class="tabs2"><button id="rW" aria-selected="${rpMode === "week"}">ช่วงเบิกเงินสำรอง</button><button id="rM" aria-selected="${rpMode === "month"}">รายรอบ (26–25)</button></div>
-   ${rpMode === "week" ? `<div class="grid" style="margin-top:12px"><div class="fld"><label for="rA">ตั้งแต่วันที่</label><input type="date" id="rA" value="${rpA}"></div><div class="fld"><label for="rB">ถึงวันที่</label><input type="date" id="rB" value="${rpB}"></div></div><p class="sm" style="margin:6px 0 0">ช่วงเบิกเงินสำรอง ${label}</p>` : `<div class="wk"><button id="rPrev" aria-label="เดือนก่อน">‹</button><div>${label}<small>สรุปค่าไฟฟ้า ${periodSpan(rpStart)}</small></div><button id="rNext" aria-label="เดือนถัดไป">›</button></div>`}
+  main().innerHTML = `<div class="tabs2"><button id="rW" aria-selected="${rpMode === "week"}">ช่วงเบิกเงินสำรอง</button><button id="rM" aria-selected="${rpMode === "month"}">รายเดือน</button></div>
+   ${rpMode === "week" ? `<div class="grid" style="margin-top:12px"><div class="fld"><label for="rA">ตั้งแต่วันที่</label><input type="date" id="rA" value="${rpA}"></div><div class="fld"><label for="rB">ถึงวันที่</label><input type="date" id="rB" value="${rpB}"></div></div><p class="sm" style="margin:6px 0 0">ช่วงเบิกเงินสำรอง ${label}</p>` : `<div class="wk"><button id="rPrev" aria-label="เดือนก่อน">‹</button><div>${label}<small>สรุปค่าไฟฟ้าประจำเดือน · 1 – ${new Date(rpStart.getFullYear(), rpStart.getMonth() + 1, 0).getDate()} ${MS[rpStart.getMonth()]}</small></div><button id="rNext" aria-label="เดือนถัดไป">›</button></div>`}
    ${R.length ? `<section class="hero"><small>ค่าไฟฟ้ารวม (รวม VAT)</small><div class="big num">${fmt(T)}<span>บาท</span></div><div class="kpis num"><div><b>${fmt(K, 2)}</b><span>kWh</span></div><div><b>${R.length}</b><span>ครั้งที่ชาร์จ</span></div><div><b>${K ? fmt(T / K) : "–"}</b><span>บาท/kWh</span></div></div></section>
    <h2>ค่าไฟฟ้ารายวันแยกรายคัน <small>บาท · แตะกราฟเพื่อดูยอด</small></h2><section class="card"><div class="legend" id="rcLeg"></div><div class="chart" id="rc"></div></section>
    <h2>แยกรายคัน</h2><section class="card">${buses.map((x) => { const l = R.filter((r) => r.bus === x), aa = sum(l, (r) => r.amt), mx = Math.max(...buses.map((y) => sum(R.filter((r) => r.bus === y), (r) => r.amt))); return `<div class="busrow" style="--c:${SCOL[x]}"><div class="n"><i></i>${x}</div><div><div class="fill" style="width:${(aa / mx) * 100}%"></div><div class="v num"><span><b>${fmt(aa)}</b> บาท</span><span>${l.length} ครั้ง</span><span>${fmt(sum(l, (r) => r.kwh), 1)} kWh</span><span>${fmt(sum(l, (r) => r.kwh) / l.length, 1)} kWh/ครั้ง</span></div></div></div>`; }).join("")}</section>
