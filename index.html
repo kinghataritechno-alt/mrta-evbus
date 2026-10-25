@@ -11,7 +11,7 @@
 /* Layout: one image-proportioned stage (941:1597) from the approved mockup — logo + STC-01 on the road; a clear frosted
    glass card with the two fields and button sits over the road, footer below. Sized in container units so it tracks the photo. */
 :root{
-  --road:#2a4e7b;
+  --road:#0b285c;
   --glass:rgba(255,255,255,.07);
   --edge:rgba(120,205,255,.7);
   --field:rgba(255,255,255,.07);
@@ -29,6 +29,8 @@
 html,body{min-height:100%}
 body{margin:0;background:var(--road);color:var(--fg);font-family:var(--body);-webkit-font-smoothing:antialiased}
 
+.page{max-width:520px;margin:0 auto;min-height:100vh;min-height:100svh;
+  background:#0b285c}
 .screen{container-type:inline-size;position:relative;width:100%;max-width:520px;margin:0 auto;
   aspect-ratio:941/1597;background:var(--road) url("assets/img/login-bg.jpg") top center/100% auto no-repeat}
 
@@ -79,7 +81,7 @@ footer .en{font-size:max(10px,1.95cqw);letter-spacing:.02em}
 @media (prefers-reduced-motion:reduce){.spin{animation-duration:2s}.submit,.field{transition:none}}
 </style>
 
-<div class="screen">
+<div class="page"><div class="screen">
   <div class="stack" role="main">
     <section class="card" aria-labelledby="ttl">
       <h1 id="ttl" class="sr">เข้าสู่ระบบ Smart Shuttle Bus EV</h1>
@@ -115,7 +117,7 @@ footer .en{font-size:max(10px,1.95cqw);letter-spacing:.02em}
       <span class="en">SMART TERMINAL CORPORATION CO., LTD.</span>
     </footer>
   </div>
-</div>
+</div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
