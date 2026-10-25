@@ -230,3 +230,4 @@ table.t tr:last-child td{border-bottom:0}
 .doc .dlg tr.tot td{font-weight:700;background:#f1f4fb}
 a.btn{text-decoration:none;display:flex;align-items:center;justify-content:center}
 .notice.ok{border-color:rgba(120,230,100,.45);background:rgba(60,170,60,.1);color:#c9ffb8}.notice.ok a{color:#fff}
+.doc .dtb.xs{font-size:10.5px}.doc .dtb.xs td{padding:1.4px 5px}.doc .dtb.xs th{padding:3px 5px}
