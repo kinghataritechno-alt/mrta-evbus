@@ -236,15 +236,21 @@ function claimSheet(dset) {
 
 /* ================= SCHEDULE ================= */
 let schedMonth = null, schedDay = null;
+/* Work period runs 26th of previous month – 25th of this month (as the legacy timesheet). m = first day of the period's named month. */
+const MSH = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+const periodOf = (d) => { const t = dObj(d); return new Date(t.getFullYear(), t.getMonth() + (t.getDate() > 25 ? 1 : 0), 1); };
+const periodRange = (m) => [iso(new Date(m.getFullYear(), m.getMonth() - 1, 26)), iso(new Date(m.getFullYear(), m.getMonth(), 25))];
+const periodLabel = (m) => { const p = new Date(m.getFullYear(), m.getMonth() - 1, 1); return `รอบ ${MONTH[m.getMonth()]} ${m.getFullYear() + 543}`; };
+const periodSpan = (m) => { const p = new Date(m.getFullYear(), m.getMonth() - 1, 1); return `26 ${MSH[p.getMonth()]} – 25 ${MSH[m.getMonth()]} ${m.getFullYear() + 543}`; };
 async function schedule() {
-  if (!schedMonth) { const t = dObj(today()); schedMonth = new Date(t.getFullYear(), t.getMonth(), 1); }
+  if (!schedMonth) schedMonth = periodOf(today());
   if (isMgr()) return scheduleManager();
-  const a = iso(schedMonth), b = iso(new Date(schedMonth.getFullYear(), schedMonth.getMonth() + 1, 0));
+  const [a, b] = periodRange(schedMonth);
   const rows = await q(sb.from("work_schedules").select("*").eq("employee_id", ME.employee?.id || "00000000-0000-0000-0000-000000000000").gte("work_date", a).lte("work_date", b).order("work_date"));
   const counts = { work: 0, off: 0, leave: 0, standby: 0 }; rows.forEach((r) => counts[r.status]++);
-  main().innerHTML = `<div class="wk"><button id="mPrev" aria-label="เดือนก่อน">‹</button><div>${MONTH[schedMonth.getMonth()]} ${schedMonth.getFullYear() + 543}<small>ตารางปฏิบัติงานของ ${esc(ME.employee?.name || "")}</small></div><button id="mNext" aria-label="เดือนถัดไป">›</button></div>
+  main().innerHTML = `<div class="wk"><button id="mPrev" aria-label="รอบก่อน">‹</button><div>${periodLabel(schedMonth)}<small>${periodSpan(schedMonth)} · ${esc(ME.employee?.name || "")}</small></div><button id="mNext" aria-label="เดือนถัดไป">›</button></div>
    <section class="sum"><div class="tile"><small>วันทำงาน</small><b class="num">${counts.work}</b><span>วัน</span></div><div class="tile"><small>วันหยุด/ลา</small><b class="num">${counts.off + counts.leave}</b><span>วัน</span></div><div class="tile"><small>สำรอง</small><b class="num">${counts.standby}</b><span>วัน</span></div></section>
-   <h2>รายวัน</h2><div class="list">${rows.length ? rows.map(dayRow).join("") : `<div class="empty"><b>ยังไม่มีตารางเดือนนี้</b>ผู้จัดการยังไม่ได้จัดตาราง</div>`}</div>`;
+   <h2>รายวัน</h2><div class="list">${rows.length ? rows.map(dayRow).join("") : `<div class="empty"><b>ยังไม่มีตารางรอบนี้</b>ผู้จัดการยังไม่ได้จัดตาราง</div>`}</div>`;
   $("mPrev").onclick = () => { schedMonth.setMonth(schedMonth.getMonth() - 1); schedule(); };
   $("mNext").onclick = () => { schedMonth.setMonth(schedMonth.getMonth() + 1); schedule(); };
 }
@@ -577,16 +583,16 @@ async function vehicle() {
 let rpMode = "week", rpStart = null, rpA = "2026-10-16", rpB = "2026-10-20";
 const monday = (d) => { const x = dObj(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
 async function report() {
-  if (!rpStart) rpStart = new Date(2026, 9, 1);
+  if (!rpStart) rpStart = periodOf(today());
   let a, b, label;
   if (rpMode === "week") { a = rpA; b = rpB; label = `${bk(a)} – ${bk(b)}`; }
-  else { a = iso(new Date(rpStart.getFullYear(), rpStart.getMonth(), 1)); b = iso(new Date(rpStart.getFullYear(), rpStart.getMonth() + 1, 0)); label = `${MONTH[rpStart.getMonth()]} ${rpStart.getFullYear() + 543}`; }
+  else { [a, b] = periodRange(rpStart); label = periodLabel(rpStart); }
   const R = (await q(sb.from("charging_records").select("*").gte("receipt_date", a).lte("receipt_date", b).order("receipt_date"))).map((r) => ({ ...r, bus: vById(r.vehicle_id)?.code || "ไม่ระบุ", amt: Number(r.total), kwh: Number(r.kwh) }));
   const sum = (l, f) => l.reduce((s, x) => s + f(x), 0), T = sum(R, (r) => r.amt), K = sum(R, (r) => r.kwh);
   const buses = ["STC-01", "STC-02", "STC-03", "STC-04", "ไม่ระบุ"].filter((x) => R.some((r) => r.bus === x));
   const days = [...new Set(R.map((r) => r.receipt_date))];
-  main().innerHTML = `<div class="tabs2"><button id="rW" aria-selected="${rpMode === "week"}">ช่วงเบิกเงินสำรอง</button><button id="rM" aria-selected="${rpMode === "month"}">รายเดือน</button></div>
-   ${rpMode === "week" ? `<div class="grid" style="margin-top:12px"><div class="fld"><label for="rA">ตั้งแต่วันที่</label><input type="date" id="rA" value="${rpA}"></div><div class="fld"><label for="rB">ถึงวันที่</label><input type="date" id="rB" value="${rpB}"></div></div><p class="sm" style="margin:6px 0 0">ช่วงเบิกเงินสำรอง ${label}</p>` : `<div class="wk"><button id="rPrev" aria-label="เดือนก่อน">‹</button><div>${label}<small>สรุปค่าไฟฟ้าประจำเดือน</small></div><button id="rNext" aria-label="เดือนถัดไป">›</button></div>`}
+  main().innerHTML = `<div class="tabs2"><button id="rW" aria-selected="${rpMode === "week"}">ช่วงเบิกเงินสำรอง</button><button id="rM" aria-selected="${rpMode === "month"}">รายรอบ (26–25)</button></div>
+   ${rpMode === "week" ? `<div class="grid" style="margin-top:12px"><div class="fld"><label for="rA">ตั้งแต่วันที่</label><input type="date" id="rA" value="${rpA}"></div><div class="fld"><label for="rB">ถึงวันที่</label><input type="date" id="rB" value="${rpB}"></div></div><p class="sm" style="margin:6px 0 0">ช่วงเบิกเงินสำรอง ${label}</p>` : `<div class="wk"><button id="rPrev" aria-label="เดือนก่อน">‹</button><div>${label}<small>สรุปค่าไฟฟ้า ${periodSpan(rpStart)}</small></div><button id="rNext" aria-label="เดือนถัดไป">›</button></div>`}
    ${R.length ? `<section class="hero"><small>ค่าไฟฟ้ารวม (รวม VAT)</small><div class="big num">${fmt(T)}<span>บาท</span></div><div class="kpis num"><div><b>${fmt(K, 2)}</b><span>kWh</span></div><div><b>${R.length}</b><span>ครั้งที่ชาร์จ</span></div><div><b>${K ? fmt(T / K) : "–"}</b><span>บาท/kWh</span></div></div></section>
    <h2>ค่าไฟฟ้ารายวัน <small>บาท</small></h2><section class="card"><div class="legend"><span><i style="--c:var(--blue)"></i>รวมทุกคัน</span></div><div class="chart" id="rc"></div></section>
    <h2>แยกรายคัน</h2><section class="card">${buses.map((x) => { const l = R.filter((r) => r.bus === x), aa = sum(l, (r) => r.amt), mx = Math.max(...buses.map((y) => sum(R.filter((r) => r.bus === y), (r) => r.amt))); return `<div class="busrow" style="--c:${SCOL[x]}"><div class="n"><i></i>${x}</div><div><div class="fill" style="width:${(aa / mx) * 100}%"></div><div class="v num"><span><b>${fmt(aa)}</b> บาท</span><span>${l.length} ครั้ง</span><span>${fmt(sum(l, (r) => r.kwh), 1)} kWh</span><span>${fmt(sum(l, (r) => r.kwh) / l.length, 1)} kWh/ครั้ง</span></div></div></div>`; }).join("")}</section>
