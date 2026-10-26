@@ -132,7 +132,7 @@ const NAV = () => [
 function drawNav() {
   $("nav").innerHTML = NAV().map(([k, l, p]) => `<a href="#${k}" data-k="${k}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${p}</svg>${l}</a>`).join("");
 }
-const PAGES = { home, schedule, inspect, charge, maint, vehicle, report, account, password, trip: () => window.tripPage(), tripstops: () => window.tripStops(), tripreport: () => window.tripReport(), agent: () => (window.agentPage ? window.agentPage() : Promise.reject(new Error("โหลดหน้า Manager Agent ไม่สำเร็จ ลองเปิดแอพใหม่"))), pdf: () => (window.pdfPage ? window.pdfPage() : Promise.reject(new Error("โหลดหน้าเอกสารไม่สำเร็จ ลองเปิดแอพใหม่"))) };
+const PAGES = { home, schedule, inspect, charge, maint, vehicle, report, account, password, trip: () => window.tripPage(), tripstops: () => window.tripStops(), tripreport: () => window.tripReport(), ai: () => (window.aiPage ? window.aiPage() : Promise.reject(new Error("โหลด Smart AI ไม่สำเร็จ ลองเปิดแอพใหม่"))), agent: () => (window.agentPage ? window.agentPage() : Promise.reject(new Error("โหลดหน้า Manager Agent ไม่สำเร็จ ลองเปิดแอพใหม่"))), pdf: () => (window.pdfPage ? window.pdfPage() : Promise.reject(new Error("โหลดหน้าเอกสารไม่สำเร็จ ลองเปิดแอพใหม่"))) };
 const STALE = "\u2063stale";
 function route() {
   $("sheet").hidden = true; $("viewer").hidden = true; // never leave a sheet over a different page
@@ -151,7 +151,7 @@ function route() {
   if ((k === "report" || k === "agent") && !isMgr()) k = "home";
   document.querySelectorAll("#nav a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.k === k) || a.setAttribute("aria-current", a.dataset.k === k ? "page" : "false"));
   document.querySelectorAll("#nav a").forEach((a) => { if (a.dataset.k === k) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
-  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", agent: "🤖 Manager Agent", pdf: "ตารางงาน (PDF)", trip: "รายงานรอบเดินรถ", tripstops: "บันทึกผู้โดยสาร", tripreport: "รายงานรอบเดินรถประจำเดือน", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
+  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", agent: "🤖 Manager Agent", ai: "🤖 Smart AI ผู้ช่วย", pdf: "ตารางงาน (PDF)", trip: "รายงานรอบเดินรถ", tripstops: "บันทึกผู้โดยสาร", tripreport: "รายงานรอบเดินรถประจำเดือน", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
   scrollTo(0, 0);
   loading();
   PAGES[k]().catch((e) => { if (my === route.seq && !(e && e.message === STALE)) main().innerHTML = `<p class="err">${esc(errMsg(e))}</p>`; });
@@ -220,7 +220,7 @@ async function homeDriver() {
       </div></article>`;
     }).join("") + `</div>`;
     h += `<a class="btn block pri" href="#trip" style="margin-top:12px;min-height:52px">📷 รายงานรอบเดินรถ (สแตนด์บายรับออก)</a>`;
-    h += `<h2>เมนู</h2><div class="actions">${ACT.trip}${ACT.inspect}${ACT.charge}${ACT.maint}${ACT.accident}${ACT.schedule}${ACT.vehicle}</div>`;
+    h += `<h2>เมนู</h2><div class="actions">${ACT.trip}${ACT.inspect}${ACT.charge}${ACT.maint}${ACT.accident}${ACT.schedule}${ACT.vehicle}${ACT.ai}</div>`;
   } else {
     const st = ME.schedule?.status;
     h += `<h2>วันนี้</h2><div class="empty"><b>${st === "off" ? "วันหยุดของคุณ" : st === "leave" ? "วันลา" : st === "standby" ? "วันนี้คุณเป็นคนขับสำรอง" : "วันนี้ยังไม่มีรถที่ได้รับมอบหมาย"}</b>${st === "standby" ? "พร้อมรับรถแทนเมื่อมีคนขับลาหรือขาด" : "ดูตารางงานของคุณได้ที่เมนูตารางงาน"}</div>`;
@@ -228,7 +228,7 @@ async function homeDriver() {
       const cl = await q(sb.rpc("claimable_today"));
       h += `<h2>รับรถแทน <small>รถที่คนขับประจำยังไม่เริ่มงาน</small></h2>` + (cl.length ? `<div class="list">${cl.map((c) => `<article class="bus" style="--c:${COLOR[c.code]}"><img src="${busImg(c.code)}" alt=""><div class="b"><div class="row1"><b>${c.code}</b><span class="plate num">${c.plate}</span></div><div class="sm">คนขับตามตาราง <b>${esc(c.driver_name || "ไม่มี")}</b></div><button class="btn" data-claim="${c.vehicle_id}" data-absent="${c.driver_id || ""}" data-name="${esc(c.driver_name || "")}" data-code="${c.code}">รับรถแทน</button></div></article>`).join("")}</div>` : `<div class="empty">ไม่มีรถที่ต้องรับแทนตอนนี้</div>`);
     }
-    h += `<h2>เมนู</h2><div class="actions">${ACT.schedule}${ACT.maint}${ACT.account}</div>`;
+    h += `<h2>เมนู</h2><div class="actions">${ACT.schedule}${ACT.maint}${ACT.ai}${ACT.account}</div>`;
   }
   return h;
 }
@@ -296,6 +296,7 @@ async function nextPeriodCard() {
 }
 const ic = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">${p}</svg>`;
 const ACT = {
+  ai: `<a class="act" href="#ai">${ic('<path d="M5 5h14v10H9l-4 4z"/><path d="M9 10h.01M12 10h.01M15 10h.01"/>')}Smart AI ผู้ช่วย</a>`,
   agent: `<a class="act" href="#agent">${ic('<rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9.5 16.5h5"/>')}Manager Agent</a>`,
   trip: `<a class="act" href="#trip">${ic('<path d="M4 8.5h3l1.6-2.5h6.8L17 8.5h3v10H4z"/><circle cx="12" cy="13.2" r="3.4"/>')}รายงานรอบเดินรถ</a>`,
   inspect: `<a class="act" href="#inspect">${ic('<path d="M9 4h6v3H9z"/><rect x="5" y="5.5" width="14" height="15" rx="2"/><path d="M8.5 13l2.3 2.3L15.5 10.5"/>')}ตรวจสภาพรถ</a>`,
