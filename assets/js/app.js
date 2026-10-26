@@ -710,15 +710,17 @@ async function report() {
    ${rpMode === "week" ? `<div class="grid" style="margin-top:12px"><div class="fld"><label for="rA">ตั้งแต่วันที่</label><input type="date" id="rA" value="${rpA}"></div><div class="fld"><label for="rB">ถึงวันที่</label><input type="date" id="rB" value="${rpB}"></div></div><p class="sm" style="margin:6px 0 0">ช่วงเบิกเงินสำรอง ${label}</p>` : `<div class="wk"><button id="rPrev" aria-label="เดือนก่อน">‹</button><div>${label}<small>สรุปค่าไฟฟ้าประจำเดือน · 1 – ${new Date(rpStart.getFullYear(), rpStart.getMonth() + 1, 0).getDate()} ${MS[rpStart.getMonth()]}</small></div><button id="rNext" aria-label="เดือนถัดไป">›</button></div>`}
    ${R.length ? `<section class="hero"><small>ค่าไฟฟ้ารวม (รวม VAT)</small><div class="big num">${fmt(T)}<span>บาท</span></div><div class="kpis num"><div><b>${fmt(K, 2)}</b><span>kWh</span></div><div><b>${R.length}</b><span>ครั้งที่ชาร์จ</span></div><div><b>${K ? fmt(T / K) : "–"}</b><span>บาท/kWh</span></div></div></section>
    <h2>ค่าไฟฟ้ารายวันแยกรายคัน <small>บาท · แตะกราฟเพื่อดูยอด</small></h2><section class="card"><div class="legend" id="rcLeg"></div><div class="chart" id="rc"></div></section>
-   <h2>แยกรายคัน</h2><section class="card">${buses.map((x) => { const l = R.filter((r) => r.bus === x), aa = sum(l, (r) => r.amt), mx = Math.max(...buses.map((y) => sum(R.filter((r) => r.bus === y), (r) => r.amt))); return `<div class="busrow" style="--c:${SCOL[x]}"><div class="n"><i></i>${x}</div><div><div class="fill" style="width:${(aa / mx) * 100}%"></div><div class="v num"><span><b>${fmt(aa)}</b> บาท</span><span>${l.length} ครั้ง</span><span>${fmt(sum(l, (r) => r.kwh), 1)} kWh</span><span>${fmt(sum(l, (r) => r.kwh) / l.length, 1)} kWh/ครั้ง</span></div></div></div>`; }).join("")}</section>
+   <h2>แยกรายคัน</h2><section class="card">${buses.map((x) => { const l = R.filter((r) => r.bus === x), aa = sum(l, (r) => r.amt), mx = Math.max(...buses.map((y) => sum(R.filter((r) => r.bus === y), (r) => r.amt))); return `<button class="busrow" data-bus="${x}" style="--c:${SCOL[x]};width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);color:inherit;font:inherit;cursor:pointer"><div class="n"><i></i>${x} ›</div><div><div class="fill" style="width:${(aa / mx) * 100}%"></div><div class="v num"><span><b>${fmt(aa)}</b> บาท</span><span>${l.length} ครั้ง</span><span>${fmt(sum(l, (r) => r.kwh), 1)} kWh</span><span>${fmt(sum(l, (r) => r.kwh) / l.length, 1)} kWh/ครั้ง</span></div></div></button>`; }).join("")}<p class="sm" style="margin:6px 0 0">แตะชื่อรถเพื่อดูรายละเอียดการชาร์จและใบเสร็จ</p></section>
    ${R.some((r) => r.bus === "ไม่ระบุ") ? `<h2>ต้องตรวจสอบ</h2><p class="notice">ใบเสร็จไม่ระบุทะเบียน ${R.filter((r) => r.bus === "ไม่ระบุ").length} ใบ รวม ${fmt(sum(R.filter((r) => r.bus === "ไม่ระบุ"), (r) => r.amt))} บาท ยังแยกไม่ได้ว่าเป็นรถคันไหน</p>` : ""}
-   <h2>รายการใบเสร็จ</h2><section class="card" style="overflow-x:auto"><table class="t"><thead><tr><th>วันที่</th><th>เลขที่ใบเสร็จ</th><th>รถ</th><th class="r">kWh</th><th class="r">บาท</th></tr></thead><tbody>${R.map((r) => `<tr><td class="num">${bk(r.receipt_date)}</td><td class="num">${r.receipt_no || "–"}</td><td>${r.bus}</td><td class="r num">${fmt(r.kwh, 2)}</td><td class="r num">${fmt(r.amt)}</td></tr>`).join("")}<tr><td colspan="3"><b>รวม</b></td><td class="r num"><b>${fmt(K, 2)}</b></td><td class="r num"><b>${fmt(T)}</b></td></tr></tbody></table></section>
+   <h2>รายการใบเสร็จ</h2><section class="card" style="overflow-x:auto"><table class="t"><thead><tr><th>วันที่</th><th>เลขที่ใบเสร็จ</th><th>รถ</th><th class="r">kWh</th><th class="r">บาท</th></tr></thead><tbody>${R.map((r) => `<tr data-rec="${r.id}" style="cursor:pointer"><td class="num">${bk(r.receipt_date)}</td><td class="num">${r.receipt_no || "–"}</td><td>${r.bus}</td><td class="r num">${fmt(r.kwh, 2)}</td><td class="r num">${fmt(r.amt)}</td></tr>`).join("")}<tr><td colspan="3"><b>รวม</b></td><td class="r num"><b>${fmt(K, 2)}</b></td><td class="r num"><b>${fmt(T)}</b></td></tr></tbody></table></section>
    <button class="btn block" id="rCopy" style="margin-top:12px">คัดลอกสรุปส่งเบิก</button>` : `<div class="empty" style="margin-top:12px"><b>ไม่มีบันทึกการชาร์จในช่วงนี้</b>เลือกช่วงวันที่อื่น หรือรอคนขับบันทึกการชาร์จ</div>`}`;
   $("rW").onclick = () => { rpMode = "week"; report(); };
   $("rM").onclick = () => { rpMode = "month"; report(); };
   if (rpMode === "week") { $("rA").onchange = (e) => { if (e.target.value) { rpA = e.target.value; if (rpB < rpA) rpB = rpA; report(); } }; $("rB").onchange = (e) => { if (e.target.value) { rpB = e.target.value; if (rpB < rpA) rpA = rpB; report(); } }; }
   else { $("rPrev").onclick = () => { rpStart.setMonth(rpStart.getMonth() - 1); report(); }; $("rNext").onclick = () => { rpStart.setMonth(rpStart.getMonth() + 1); report(); }; }
   if (!R.length) return;
+  main().querySelectorAll("[data-bus]").forEach((b) => (b.onclick = () => chargeSheet(b.dataset.bus, R.filter((r) => r.bus === b.dataset.bus), label)));
+  main().querySelectorAll("[data-rec]").forEach((tr) => (tr.onclick = () => { const r = R.find((x) => x.id === tr.dataset.rec); chargeSheet(r.bus, [r], bk(r.receipt_date)); }));
   $("rCopy").onclick = () => copyText(`สรุปค่าไฟฟ้า MRTA Shuttle Bus ${label}\n` + buses.map((x) => { const l = R.filter((r) => r.bus === x); return `${x}: ${l.length} ครั้ง ${fmt(sum(l, (r) => r.kwh), 1)} kWh ${fmt(sum(l, (r) => r.amt))} บาท`; }).join("\n") + `\nรวม ${R.length} ครั้ง ${fmt(K, 1)} kWh ${fmt(T)} บาท · แนบใบเสร็จ ${R.length} ใบ`);
   // line chart: one line per bus (all four always shown; "ไม่ระบุ" only when such receipts exist)
   const LB = ["STC-01", "STC-02", "STC-03", "STC-04"].concat(R.some((r) => r.bus === "ไม่ระบุ") ? ["ไม่ระบุ"] : []);
@@ -751,6 +753,27 @@ async function report() {
   };
   svg.addEventListener("pointermove", show); svg.addEventListener("pointerdown", show);
   svg.addEventListener("pointerleave", () => { tip.hidden = true; cur.setAttribute("visibility", "hidden"); });
+}
+
+/* charging details per vehicle (managers/admin): every charge with times, battery, kWh, amount, driver and the receipt file */
+async function chargeSheet(bus, list, label) {
+  const s = $("sheet");
+  const emps = await q(sb.from("employees").select("id,full_name")).catch(() => []);
+  const nm = (id) => (emps.find((e) => e.id === id)?.full_name || "–");
+  const sum = (f) => list.reduce((t, r) => t + f(r), 0);
+  s.innerHTML = `<div class="in" style="max-height:86vh;overflow:auto"><div class="sh"><b>การชาร์จ ${esc(bus)} · ${esc(label)}</b><button class="lnk" id="shX">ปิด</button></div>
+    <section class="sum" style="margin-top:0"><div class="tile"><small>ครั้ง</small><b class="num">${list.length}</b></div><div class="tile"><small>kWh</small><b class="num">${fmt(sum((r) => r.kwh), 1)}</b></div><div class="tile"><small>บาท</small><b class="num">${fmt(sum((r) => r.amt))}</b></div></section>
+    <div class="list" style="margin-top:10px">${list.map((r) => `<div class="card"><div class="row1"><b>${bk(r.receipt_date)}${r.started_at ? ` · ${tHM(r.started_at)}–${tHM(r.ended_at)} น.` : ""}</b><span class="pill ok">${fmt(r.amt)} บาท</span></div>
+      <p class="sm" style="margin:6px 0 0;line-height:1.7">แบต <b>${r.soc_before ?? "–"}% → ${r.soc_after ?? "–"}%</b> · ${fmt(r.kwh, 2)} kWh${r.subtotal ? ` · ก่อน VAT ${fmt(r.subtotal)} · VAT ${fmt(r.vat)}` : ""}<br>
+      ใบเสร็จ <b class="num">${esc(r.receipt_no || "–")}</b>${r.ev_ref ? ` · อ้างอิง ${esc(r.ev_ref)}` : ""}<br>${esc(r.station || "")}${r.employee_id ? ` · บันทึกโดย ${esc(nm(r.employee_id))}` : ""}${r.source !== "app" ? " · นำเข้า" : ""}</p>
+      ${r.receipt_path ? `<button class="btn block" data-rcp="${esc(r.receipt_path)}" style="margin-top:8px">${/\.pdf$/i.test(r.receipt_path) ? "📄 เปิดใบเสร็จ (PDF)" : "🧾 ดูรูปใบเสร็จ"}</button>` : `<p class="sm" style="margin:8px 0 0">ไม่มีไฟล์ใบเสร็จแนบ</p>`}</div>`).join("")}</div></div>`;
+  s.hidden = false; $("shX").onclick = () => (s.hidden = true);
+  s.querySelectorAll("[data-rcp]").forEach((b) => (b.onclick = async () => {
+    const path = b.dataset.rcp, win = /\.pdf$/i.test(path) ? window.open("", "_blank") : null; // open the tab inside the tap (popup blockers)
+    const [u] = await signed([path]);
+    if (!u) { if (win) win.close(); toast("เปิดไฟล์ไม่ได้ ลองใหม่อีกครั้ง"); return; }
+    if (win) win.location.href = u; else { $("vImg").src = u; $("viewer").hidden = false; }
+  }));
 }
 
 /* ================= ACCOUNT / PASSWORD ================= */
