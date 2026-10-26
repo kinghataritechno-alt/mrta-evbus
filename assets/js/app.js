@@ -132,7 +132,7 @@ const NAV = () => [
 function drawNav() {
   $("nav").innerHTML = NAV().map(([k, l, p]) => `<a href="#${k}" data-k="${k}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${p}</svg>${l}</a>`).join("");
 }
-const PAGES = { home, schedule, inspect, charge, maint, vehicle, report, account, password, trip: () => window.tripPage(), tripstops: () => window.tripStops(), tripreport: () => window.tripReport(), pdf: () => (window.pdfPage ? window.pdfPage() : Promise.reject(new Error("โหลดหน้าเอกสารไม่สำเร็จ ลองเปิดแอพใหม่"))) };
+const PAGES = { home, schedule, inspect, charge, maint, vehicle, report, account, password, trip: () => window.tripPage(), tripstops: () => window.tripStops(), tripreport: () => window.tripReport(), agent: () => (window.agentPage ? window.agentPage() : Promise.reject(new Error("โหลดหน้า Manager Agent ไม่สำเร็จ ลองเปิดแอพใหม่"))), pdf: () => (window.pdfPage ? window.pdfPage() : Promise.reject(new Error("โหลดหน้าเอกสารไม่สำเร็จ ลองเปิดแอพใหม่"))) };
 const STALE = "\u2063stale";
 function route() {
   $("sheet").hidden = true; $("viewer").hidden = true; // never leave a sheet over a different page
@@ -148,10 +148,10 @@ function route() {
   if (fixedPw && k === "password") k = "account";
   if (!fixedPw && PROFILE.must_change_password && k !== "password") k = "password";
   if (!PAGES[k]) k = "home";
-  if (k === "report" && !isMgr()) k = "home";
+  if ((k === "report" || k === "agent") && !isMgr()) k = "home";
   document.querySelectorAll("#nav a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.k === k) || a.setAttribute("aria-current", a.dataset.k === k ? "page" : "false"));
   document.querySelectorAll("#nav a").forEach((a) => { if (a.dataset.k === k) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
-  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", pdf: "ตารางงาน (PDF)", trip: "รายงานรอบเดินรถ", tripstops: "บันทึกผู้โดยสาร", tripreport: "รายงานรอบเดินรถประจำเดือน", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
+  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", agent: "🤖 Manager Agent", pdf: "ตารางงาน (PDF)", trip: "รายงานรอบเดินรถ", tripstops: "บันทึกผู้โดยสาร", tripreport: "รายงานรอบเดินรถประจำเดือน", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
   scrollTo(0, 0);
   loading();
   PAGES[k]().catch((e) => { if (my === route.seq && !(e && e.message === STALE)) main().innerHTML = `<p class="err">${esc(errMsg(e))}</p>`; });
@@ -199,7 +199,8 @@ async function home() {
 async function homeDriver() {
   const vs = myVehicles();
   const claims = await q(sb.from("cover_claims").select("*").eq("work_date", ME.date));
-  let h = window.shiftCard ? await window.shiftCard() : "";
+  let h = window.alertsCard ? await window.alertsCard() : "";
+  h += window.shiftCard ? await window.shiftCard() : "";
   const pend = claims.filter((c) => c.status === "pending" && c.relief_employee_id === ME.employee?.id);
   if (pend.length) h += `<p class="notice" style="margin-top:12px">รับรถแทนแล้ว รอผู้จัดการอนุมัติ ใช้รถได้ตามปกติ</p>`;
   const absent = claims.find((c) => c.absent_employee_id === ME.employee?.id && c.status !== "rejected");
@@ -251,6 +252,8 @@ async function homeFleet() {
       <p class="sm" style="margin:4px 0 8px">${esc(nm(c.relief_employee_id))} รับรถแทน ${esc(nm(c.absent_employee_id))} · ${esc(c.reason)} · ${bk(c.work_date)} ${tHM(c.claimed_at)} น.</p>
       <div class="acts"><button class="btn pri" data-decide="${c.id}" data-ok="1">อนุมัติ</button><button class="btn" data-decide="${c.id}" data-ok="0">ไม่อนุมัติ</button></div></div>`).join("")}</div>`;
   }
+  if (isMgr() && window.agentHomeCard) h += await window.agentHomeCard();
+  if (role() === "MAINTENANCE" && window.alertsCard) h = (await window.alertsCard()) + h;
   if (isMgr()) h += await nextPeriodCard();
   if (queue.length === 0) h += `<p class="notice" style="margin-top:12px">ยังไม่มีคิวรถของวันนี้ในระบบ</p>`;
   h += `<h2>รถวันนี้</h2><div class="list">` + VEH.map((v) => {
@@ -261,7 +264,7 @@ async function homeFleet() {
       ${isMgr() ? `<div class="sm">คนขับ <b>${esc(w?.employees?.full_name || "ยังไม่จัด")}</b>${w?.note ? `<em class="sub2">${esc(w.note.includes("แทน") ? "ขับแทน" : w.note)}</em>` : ""}</div>` : ""}
       <div class="sm num">${qq ? `รอบแรก <b>${String(qq.first_time).slice(0, 5)}</b> · ${qq.queue_code === "R2" ? "2 รอบ" : qq.planned_trips + " เที่ยว"}` : "ไม่มีคิว"}</div></div></article>`;
   }).join("") + `</div>`;
-  h += `<h2>เมนู</h2><div class="actions">${role() === "CUSTOMER" ? ACT.trip + ACT.schedule + ACT.vehicle : ACT.trip + ACT.inspect + ACT.charge + ACT.maint + ACT.schedule + ACT.vehicle + (isMgr() ? ACT.report : ACT.accident)}</div>`;
+  h += `<h2>เมนู</h2><div class="actions">${role() === "CUSTOMER" ? ACT.trip + ACT.schedule + ACT.vehicle : ACT.trip + ACT.inspect + ACT.charge + ACT.maint + ACT.schedule + ACT.vehicle + (isMgr() ? ACT.report + ACT.agent : ACT.accident)}</div>`;
   return h;
 }
 /* ---- Next-period schedule reminder (managers): schedule must be finished by the 23rd; it is used from the 26th ---- */
@@ -293,6 +296,7 @@ async function nextPeriodCard() {
 }
 const ic = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">${p}</svg>`;
 const ACT = {
+  agent: `<a class="act" href="#agent">${ic('<rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9.5 16.5h5"/>')}Manager Agent</a>`,
   trip: `<a class="act" href="#trip">${ic('<path d="M4 8.5h3l1.6-2.5h6.8L17 8.5h3v10H4z"/><circle cx="12" cy="13.2" r="3.4"/>')}รายงานรอบเดินรถ</a>`,
   inspect: `<a class="act" href="#inspect">${ic('<path d="M9 4h6v3H9z"/><rect x="5" y="5.5" width="14" height="15" rx="2"/><path d="M8.5 13l2.3 2.3L15.5 10.5"/>')}ตรวจสภาพรถ</a>`,
   charge: `<a class="act" href="#charge">${ic('<rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 10.5v3"/><path d="M11.5 8.5 9 12.5h3.5L10 15.5"/>')}บันทึกการชาร์จ</a>`,
@@ -706,7 +710,7 @@ async function report() {
   const sum = (l, f) => l.reduce((s, x) => s + f(x), 0), T = sum(R, (r) => r.amt), K = sum(R, (r) => r.kwh);
   const buses = ["STC-01", "STC-02", "STC-03", "STC-04", "ไม่ระบุ"].filter((x) => R.some((r) => r.bus === x));
   const days = [...new Set(R.map((r) => r.receipt_date))];
-  main().innerHTML = `<a class="btn block" href="#tripreport" style="margin-bottom:10px">รายงานรอบเดินรถประจำเดือน →</a><div class="tabs2"><button id="rW" aria-selected="${rpMode === "week"}">ช่วงเบิกเงินสำรอง</button><button id="rM" aria-selected="${rpMode === "month"}">รายเดือน</button></div>
+  main().innerHTML = `<a class="btn block" href="#tripreport" style="margin-bottom:10px">รายงานรอบเดินรถประจำเดือน →</a><a class="btn block" href="#agent" style="margin-bottom:10px">🤖 Manager Agent สรุปการบันทึกรายวัน →</a><div class="tabs2"><button id="rW" aria-selected="${rpMode === "week"}">ช่วงเบิกเงินสำรอง</button><button id="rM" aria-selected="${rpMode === "month"}">รายเดือน</button></div>
    ${rpMode === "week" ? `<div class="grid" style="margin-top:12px"><div class="fld"><label for="rA">ตั้งแต่วันที่</label><input type="date" id="rA" value="${rpA}"></div><div class="fld"><label for="rB">ถึงวันที่</label><input type="date" id="rB" value="${rpB}"></div></div><p class="sm" style="margin:6px 0 0">ช่วงเบิกเงินสำรอง ${label}</p>` : `<div class="wk"><button id="rPrev" aria-label="เดือนก่อน">‹</button><div>${label}<small>สรุปค่าไฟฟ้าประจำเดือน · 1 – ${new Date(rpStart.getFullYear(), rpStart.getMonth() + 1, 0).getDate()} ${MS[rpStart.getMonth()]}</small></div><button id="rNext" aria-label="เดือนถัดไป">›</button></div>`}
    ${R.length ? `<section class="hero"><small>ค่าไฟฟ้ารวม (รวม VAT)</small><div class="big num">${fmt(T)}<span>บาท</span></div><div class="kpis num"><div><b>${fmt(K, 2)}</b><span>kWh</span></div><div><b>${R.length}</b><span>ครั้งที่ชาร์จ</span></div><div><b>${K ? fmt(T / K) : "–"}</b><span>บาท/kWh</span></div></div></section>
    <h2>ค่าไฟฟ้ารายวันแยกรายคัน <small>บาท · แตะกราฟเพื่อดูยอด</small></h2><section class="card"><div class="legend" id="rcLeg"></div><div class="chart" id="rc"></div></section>

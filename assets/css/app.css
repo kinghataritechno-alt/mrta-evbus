@@ -239,3 +239,9 @@ a.btn{text-decoration:none;display:flex;align-items:center;justify-content:cente
 .doc .ct td.nt{font-size:9.5px}.doc .ct tr.offr td{background:#f6f7fb}
 .doc .cs{display:flex;gap:12px;margin-top:8px;font-size:11px}.doc .cs>div{flex:1;border:1px solid #9aa3b8;border-radius:4px}.doc .cs ul,.doc .cs ol{margin:4px 0;padding-left:22px;line-height:1.55}
 .doc .csg{display:flex;gap:10px;font-size:11px;border:1px solid #9aa3b8;border-top:0;padding:6px 8px}.doc .csg>div{flex:1}.doc .csg p{margin:4px 0}
+/* Manager Agent */
+.agentcard .alrow{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}
+.agentcard .alrow:first-child{border-top:0}
+.agentcard .alrow a{color:inherit;text-decoration:none;flex:1;min-width:0}
+.agentcard .alrow .btn{flex:none;min-height:40px}
+a.agentlink{color:inherit;text-decoration:none}
