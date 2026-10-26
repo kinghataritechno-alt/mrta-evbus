@@ -4,7 +4,7 @@
 const VCODE = { "439edda2-b085-49da-9c68-bced8ca30313": "STC-01", "441bfef8-acc5-4234-885d-d26aa46b0f72": "STC-02", "9e65b5c0-8ce0-437c-b50d-5003cfe801a0": "STC-03", "e188773b-353a-4647-a640-e3c8bb27aaf9": "STC-04" };
 const VPLATE = { "STC-01": "08804", "STC-02": "08824", "STC-03": "08958", "STC-04": "08960" };
 const VHEX = { "STC-01": "#e5484d", "STC-02": "#e2a400", "STC-03": "#7048e8", "STC-04": "#2f9e44" };
-const QTRIPS = { WA: 14, WB: 13, WC: 14, SA: 12, SB: 12, SC: 1, R2: 2 };
+const QTRIPS = { WA: 14, WB: 13, WC: 14, SA: 12, SB: 12, SC: 1, R2: 2, RED: 16, YEL: 17, GRN: 13 };
 const KIND_TH = { regular: "พนักงานขับรถประจำ", relief: "พนักงานขับรถ (ขับแทน)", spare: "พนักงานขับรถสำรอง (สแปร์)" };
 const LEAVE_CODE = { "ลาป่วย": "S", "ลากิจ": "P", "ลาพักร้อน": "V", "ลาไม่รับค่าจ้าง": "AB" };
 const vcode = (id) => VCODE[id] || vById(id)?.code || "";
