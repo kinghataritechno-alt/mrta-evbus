@@ -129,17 +129,14 @@ function shareTrip(v, qq, t, note) {
   const s = $("sheet");
   s.innerHTML = `<div class="in"><div class="sh"><b>บันทึกแล้ว · ส่งกลุ่ม LINE</b><button class="lnk" id="shX">ปิด</button></div>
     <pre class="sm" style="white-space:pre-wrap;background:rgba(255,255,255,.06);border-radius:10px;padding:10px;margin:0 0 10px;font-family:inherit">${esc(text)}</pre>
-    <div style="display:grid;gap:8px"><button class="btn block pri" id="tShare">ส่งรูปเข้า LINE (คัดลอกข้อความให้แล้ว)</button><button class="btn block" id="tCopy">คัดลอกข้อความอีกครั้ง</button><button class="btn block" id="tGoPax">👥 เริ่มบันทึกผู้โดยสารเที่ยวนี้ →</button></div>
-    <p class="sm" style="margin:10px 0 0">ใน LINE: เลือกกลุ่ม → ส่งรูป → กดค้างช่องพิมพ์แล้ววางข้อความ</p></div>`;
+    <div style="display:grid;gap:8px">${file ? `<button class="btn block pri" id="tShare">① ส่งรูปเข้ากลุ่ม LINE</button>` : ""}${lineBtn(text, file ? "② ส่งข้อความเข้ากลุ่ม LINE" : "📤 ส่งข้อความเข้ากลุ่ม LINE")}<button class="btn block" id="tCopy">คัดลอกข้อความ</button><button class="btn block" id="tGoPax">👥 เริ่มบันทึกผู้โดยสารเที่ยวนี้ →</button></div>
+    <p class="sm" style="margin:10px 0 0">① เลือก LINE → เลือกกลุ่ม → ส่งรูป แล้วกลับมากด ② เพื่อส่งข้อความ (หรือกดค้างช่องพิมพ์ใน LINE แล้ววาง ข้อความคัดลอกไว้ให้แล้ว)</p></div>`;
   s.hidden = false;
   $("shX").onclick = () => (s.hidden = true);
   $("tCopy").onclick = () => copyText(text);
   $("tGoPax").onclick = () => openStops(v, qq, t);
-  $("tShare").onclick = async () => {
-    try { await navigator.clipboard.writeText(text); } catch (e) {}
-    if (file && navigator.canShare && navigator.canShare({ files: [file] })) navigator.share({ files: [file], text }).catch(() => {});
-    else { copyText(text); toast("เครื่องนี้แชร์รูปตรงไม่ได้ คัดลอกข้อความแล้ว"); }
-  };
+  if ($("tShare")) $("tShare").onclick = () => sharePhoto(file, text);
+
 }
 
 /* ---------- monthly trip report (calendar month) ---------- */
@@ -224,7 +221,7 @@ async function tripPdf(label, days, cars, G, sumC, logs, P) {
     s.innerHTML = `<div class="in"><div class="sh"><b>PDF พร้อมแล้ว</b><button class="lnk" id="shX">ปิด</button></div><p class="sm" style="margin:0 0 10px">${esc(fname)}</p>
       <div style="display:grid;gap:8px"><a class="btn block" href="${url}" target="_blank" rel="noopener">เปิดดู PDF</a>${canShare ? `<button class="btn block" id="pShare">แชร์ / ส่ง LINE</button>` : ""}<a class="btn block" href="${url}" download="${esc(fname)}">บันทึกไฟล์</a></div></div>`;
     s.hidden = false; $("shX").onclick = () => (s.hidden = true);
-    if (canShare) $("pShare").onclick = () => navigator.share({ files: [file], title: fname }).catch(() => {});
+    if (canShare) $("pShare").onclick = () => navigator.share({ files: [file] }).catch((e) => { if (e && e.name !== "AbortError") savePhoto(file); });
   } catch (e) { toast("สร้าง PDF ไม่สำเร็จ: " + errMsg(e)); }
   finally { stage.remove(); }
 }

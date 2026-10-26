@@ -121,7 +121,31 @@ function myVehicles() { return isMgr() || ["MAINTENANCE"].includes(role()) ? VEH
 function busPicker(list, sel, attr = "data-b") {
   return `<div class="buses">${list.map((v) => `<button class="busbtn" style="--c:${COLOR[v.code]}" aria-pressed="${v.id === sel}" ${attr}="${v.id}"><b>${v.code}</b><small class="num">${v.plate}</small></button>`).join("")}</div>`;
 }
-function copyText(t) { navigator.clipboard.writeText(t).then(() => toast("คัดลอกแล้ว วางในกลุ่ม LINE ได้เลย")).catch(() => toast("คัดลอกไม่ได้ในเครื่องนี้")); }
+/* ---------- copy / LINE sharing (works on Android Chrome, iPhone Safari and LINE's in-app browser) ---------- */
+function copyFallback(t) {
+  try { const ta = document.createElement("textarea"); ta.value = t; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;font-size:16px";
+    document.body.appendChild(ta); ta.focus(); ta.select(); ta.setSelectionRange(0, t.length); const ok = document.execCommand("copy"); ta.remove(); return ok; } catch (e) { return false; }
+}
+function copyText(t, quiet) {
+  const done = () => { if (!quiet) toast("คัดลอกแล้ว วางในกลุ่ม LINE ได้เลย"); };
+  if (copyFallback(t)) { done(); return; } // synchronous: keeps the tap gesture on Android
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(done, () => toast("คัดลอกไม่ได้ในเครื่องนี้ กดค้างที่ข้อความเพื่อคัดลอกเอง"));
+  else toast("คัดลอกไม่ได้ในเครื่องนี้ กดค้างที่ข้อความเพื่อคัดลอกเอง");
+}
+const lineURL = (t) => "https://line.me/R/share?text=" + encodeURIComponent(t);
+const lineBtn = (t, label = "📤 ส่งข้อความเข้ากลุ่ม LINE") => `<a class="btn pri block" href="${lineURL(t)}" target="_blank" rel="noopener">${label}</a>`;
+/* share a photo: Web Share with the file only (LINE on Android drops or rejects file+text), else save it for manual attach */
+function sharePhoto(file, text) {
+  if (text) copyText(text, true);
+  if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file] }).then(() => toast("วางข้อความต่อได้เลย (คัดลอกไว้แล้ว)")).catch((e) => { if (e && e.name !== "AbortError") savePhoto(file); });
+  } else if (file) savePhoto(file);
+}
+function savePhoto(file) {
+  const a = document.createElement("a"), u = URL.createObjectURL(file); a.href = u; a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 60000);
+  toast("บันทึกรูปลงเครื่องแล้ว เปิด LINE แล้วแนบรูปจากอัลบั้ม");
+}
 
 /* ================= HOME ================= */
 async function home() {
@@ -397,9 +421,9 @@ async function sendInspect() {
     main().innerHTML = `<section style="padding-top:20px;display:flex;flex-direction:column;gap:12px"><span class="pill ${bads.length ? "bad" : "ok"}" style="margin:0;align-self:flex-start">${bads.length ? "ไม่ปกติ " + bads.length + " รายการ" : "ปกติทุกรายการ"}</span>
       <h1 class="hello" style="margin:0">${bads.length ? `${v.code} ต้องแจ้งหัวหน้างานก่อนออกรถ` : `${v.code} พร้อมให้บริการ`}</h1>
       <div class="card"><pre id="lineTxt" style="margin:0;white-space:pre-wrap;font:inherit;line-height:1.6">${esc(text)}</pre></div>
-      <button class="btn block" id="cp">คัดลอกข้อความส่งกลุ่ม LINE</button>
+      ${lineBtn(text)}<button class="btn block" id="cp">คัดลอกข้อความ</button>
       ${bads.length ? `<button class="btn danger block" id="mkJob">สร้างงานแจ้งซ่อมจากรายการที่ไม่ปกติ</button>` : ""}
-      <p class="okbox">บันทึกผลตรวจและภาพ 9 ภาพเข้าระบบแล้ว</p><a class="btn pri block" href="#home">กลับหน้าหลัก</a></section>`;
+      <p class="okbox">บันทึกผลตรวจและภาพ 9 ภาพเข้าระบบแล้ว</p><a class="btn block" href="#home">กลับหน้าหลัก</a></section>`;
     $("cp").onclick = () => copyText(text);
     if (bads.length) $("mkJob").onclick = async () => { try { await q(sb.from("maintenance_jobs").insert({ vehicle_id: INS.vid, job_type: "ซ่อมแก้ไข (CM)", description: bads.map((b) => `${b.name}: ${b.note}`).join(" · "), reported_on: today(), odometer: INS.odo, reported_by: ME.employee?.id || null, photo_paths: bads.filter((b) => b.photo).map((b) => b.photo) })); toast("สร้างงานแจ้งซ่อมแล้ว"); $("mkJob").remove(); } catch (e) { toast(errMsg(e)); } };
   } catch (e) { toast(errMsg(e)); btn.disabled = false; btn.textContent = "ส่งผลตรวจ"; }
@@ -489,7 +513,7 @@ async function saveCharge(vs) {
     main().innerHTML = `<section style="padding-top:20px;display:flex;flex-direction:column;gap:12px"><span class="pill ok" style="margin:0;align-self:flex-start">✓ บันทึกการชาร์จแล้ว</span>
      <div class="sum" style="grid-template-columns:1fr 1fr"><div class="tile"><small>เวลาชาร์จ</small><b class="num">${run.start}–${endHM}</b></div><div class="tile"><small>แบตเตอรี่</small><b class="num">${a}% → ${b}%</b></div><div class="tile"><small>พลังงาน</small><b class="num">${fmt(k, 2)} kWh</b></div><div class="tile"><small>ค่าไฟรวม VAT</small><b class="num">${fmt(tot)}</b></div></div>
      <div class="card"><pre style="margin:0;white-space:pre-wrap;font:inherit;line-height:1.6">${esc(text)}</pre></div>
-     <button class="btn block" id="cp">คัดลอกข้อความส่งกลุ่ม LINE</button><a class="btn pri block" href="#home">กลับหน้าหลัก</a><button class="lnk" id="again">เริ่มบันทึกการชาร์จครั้งถัดไป</button></section>`;
+     ${lineBtn(text)}<button class="btn block" id="cp">คัดลอกข้อความ</button><a class="btn block" href="#home">กลับหน้าหลัก</a><button class="lnk" id="again">เริ่มบันทึกการชาร์จครั้งถัดไป</button></section>`;
     $("cp").onclick = () => copyText(text); $("again").onclick = () => charge();
   } catch (e) { $("cErr").textContent = errMsg(e); $("cErr").hidden = false; btn.disabled = false; btn.textContent = "บันทึกการชาร์จ"; }
 }

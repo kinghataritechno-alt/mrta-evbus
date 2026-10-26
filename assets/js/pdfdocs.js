@@ -87,7 +87,7 @@ async function makePdf(fname, land, W, H) {
       <a class="btn block" href="${url}" download="${esc(fname)}">บันทึกไฟล์</a></div></div>`;
     s.hidden = false;
     $("shX").onclick = () => (s.hidden = true);
-    if (canShare) $("pShare").onclick = () => navigator.share({ files: [file], title: fname }).catch(() => {});
+    if (canShare) $("pShare").onclick = () => navigator.share({ files: [file] }).catch((e) => { if (e && e.name !== "AbortError") savePhoto(file); });
   } catch (e) { toast("สร้าง PDF ไม่สำเร็จ: " + errMsg(e)); }
   finally { btn.disabled = false; btn.textContent = "สร้าง PDF"; }
 }
