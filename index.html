@@ -172,9 +172,14 @@ form.addEventListener("submit", async e => {
   }
   busy(true);
   try {
-    const { data, error } = await sb.functions.invoke(CONFIG.LOGIN_FUNCTION, { body: { username: u, password: p } });
+    const call = (pw) => sb.functions.invoke(CONFIG.LOGIN_FUNCTION, { body: { username: u, password: pw } });
+    const statusOf = (err) => (err && ((err.context && err.context.status) || err.status || (err.name === "FunctionsHttpError" ? 401 : 0))) || 0;
+    let { data, error } = await call(p);
+    // Android keyboards often add a trailing space or a double space after a suggested word: retry once with spaces tidied
+    const tidy = p.normalize("NFC").replace(/\s+/g, " ").trim();
+    if ((error || !data || !data.access_token) && statusOf(error) === 401 && tidy !== p) ({ data, error } = await call(tidy));
     if (error || !data || !data.access_token) {
-      const status = error && error.context && error.context.status;
+      const status = statusOf(error);
       if (status === 429) show("ลองเข้าสู่ระบบหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่");
       else if (status === 401 || status === 400) show("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
       else show("เชื่อมต่อระบบไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
