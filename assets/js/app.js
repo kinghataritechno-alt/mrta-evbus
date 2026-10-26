@@ -362,7 +362,7 @@ function dayRow(r) {
   return `<div class="day ${x.getDay() % 6 === 0 ? "we" : ""} ${r.work_date === today() ? "today" : ""}" style="${v ? `border-left:4px solid ${COLOR[v.code]}` : ""}"><div class="d"><b class="num">${x.getDate()}</b><small>${DOW[x.getDay()]}</small></div><div class="sm">${st}${r.note ? `<em class="sub2">${esc(r.note.includes("แทน") ? "ขับแทน" : r.note)}</em>` : ""}</div></div>`;
 }
 async function scheduleManager() {
-  if (!schedDay) schedDay = today() < "2026-11-01" ? "2026-11-01" : today();
+  if (!schedDay) schedDay = today();
   const [rows, emps] = await Promise.all([
     q(sb.from("work_schedules").select("*").eq("work_date", schedDay)),
     q(sb.from("employees").select("*").in("kind", ["regular", "relief", "spare"]).order("code")),
@@ -694,9 +694,10 @@ async function vehicle() {
 }
 
 /* ================= REPORT (managers) ================= */
-let rpMode = "week", rpStart = null, rpA = "2026-10-16", rpB = "2026-10-20";
+let rpMode = "week", rpStart = null, rpA = null, rpB = null; // reimbursement range: defaults to the last 7 days
 const monday = (d) => { const x = dObj(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
 async function report() {
+  if (!rpA) { const t = dObj(today()); rpB = iso(t); t.setDate(t.getDate() - 6); rpA = iso(t); }
   if (!rpStart) { const t = dObj(today()); rpStart = new Date(t.getFullYear(), t.getMonth(), 1); }
   let a, b, label;
   if (rpMode === "week") { a = rpA; b = rpB; label = `${bk(a)} – ${bk(b)}`; }
@@ -712,7 +713,7 @@ async function report() {
    <h2>แยกรายคัน</h2><section class="card">${buses.map((x) => { const l = R.filter((r) => r.bus === x), aa = sum(l, (r) => r.amt), mx = Math.max(...buses.map((y) => sum(R.filter((r) => r.bus === y), (r) => r.amt))); return `<div class="busrow" style="--c:${SCOL[x]}"><div class="n"><i></i>${x}</div><div><div class="fill" style="width:${(aa / mx) * 100}%"></div><div class="v num"><span><b>${fmt(aa)}</b> บาท</span><span>${l.length} ครั้ง</span><span>${fmt(sum(l, (r) => r.kwh), 1)} kWh</span><span>${fmt(sum(l, (r) => r.kwh) / l.length, 1)} kWh/ครั้ง</span></div></div></div>`; }).join("")}</section>
    ${R.some((r) => r.bus === "ไม่ระบุ") ? `<h2>ต้องตรวจสอบ</h2><p class="notice">ใบเสร็จไม่ระบุทะเบียน ${R.filter((r) => r.bus === "ไม่ระบุ").length} ใบ รวม ${fmt(sum(R.filter((r) => r.bus === "ไม่ระบุ"), (r) => r.amt))} บาท ยังแยกไม่ได้ว่าเป็นรถคันไหน</p>` : ""}
    <h2>รายการใบเสร็จ</h2><section class="card" style="overflow-x:auto"><table class="t"><thead><tr><th>วันที่</th><th>เลขที่ใบเสร็จ</th><th>รถ</th><th class="r">kWh</th><th class="r">บาท</th></tr></thead><tbody>${R.map((r) => `<tr><td class="num">${bk(r.receipt_date)}</td><td class="num">${r.receipt_no || "–"}</td><td>${r.bus}</td><td class="r num">${fmt(r.kwh, 2)}</td><td class="r num">${fmt(r.amt)}</td></tr>`).join("")}<tr><td colspan="3"><b>รวม</b></td><td class="r num"><b>${fmt(K, 2)}</b></td><td class="r num"><b>${fmt(T)}</b></td></tr></tbody></table></section>
-   <button class="btn block" id="rCopy" style="margin-top:12px">คัดลอกสรุปส่งเบิก</button>` : `<div class="empty" style="margin-top:12px"><b>ไม่มีบันทึกการชาร์จในช่วงนี้</b>ข้อมูลใบเสร็จจริงที่นำเข้าอยู่ในช่วง 16–20 ต.ค. 2569</div>`}`;
+   <button class="btn block" id="rCopy" style="margin-top:12px">คัดลอกสรุปส่งเบิก</button>` : `<div class="empty" style="margin-top:12px"><b>ไม่มีบันทึกการชาร์จในช่วงนี้</b>เลือกช่วงวันที่อื่น หรือรอคนขับบันทึกการชาร์จ</div>`}`;
   $("rW").onclick = () => { rpMode = "week"; report(); };
   $("rM").onclick = () => { rpMode = "month"; report(); };
   if (rpMode === "week") { $("rA").onchange = (e) => { if (e.target.value) { rpA = e.target.value; if (rpB < rpA) rpB = rpA; report(); } }; $("rB").onchange = (e) => { if (e.target.value) { rpB = e.target.value; if (rpB < rpA) rpA = rpB; report(); } }; }
