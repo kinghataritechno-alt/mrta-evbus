@@ -66,16 +66,16 @@ async function makePdf(fname, land, W, H) {
   const btn = $("pMake");
   if (!window.html2pdf) { toast("โหลดตัวสร้าง PDF ไม่ได้ ตรวจสอบอินเทอร์เน็ต"); return; }
   btn.disabled = true; btn.innerHTML = `<span class="spin"></span> กำลังสร้าง PDF…`;
+  let stage = null;
   try {
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
-    const stage = document.createElement("div");
+    stage = document.createElement("div");
     stage.style.cssText = `position:fixed;left:-20000px;top:0;width:${W}px;background:#fff`;
     stage.innerHTML = `<div class="doc" style="width:${W}px">${$("docEl").innerHTML}</div>`;
     stage.querySelectorAll(".dpg").forEach((p) => (p.style.marginBottom = "0"));
     document.body.appendChild(stage);
     const blob = await html2pdf().set({ margin: 0, filename: fname, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: W },
       jsPDF: { unit: "px", format: [W, H], orientation: land ? "landscape" : "portrait", hotfixes: ["px_scaling"] }, pagebreak: { mode: [] } }).from(stage.firstElementChild).outputPdf("blob");
-    stage.remove();
     pdfBlob = blob; const url = URL.createObjectURL(blob);
     const file = new File([blob], fname, { type: "application/pdf" });
     const canShare = navigator.canShare && navigator.canShare({ files: [file] });
@@ -89,7 +89,7 @@ async function makePdf(fname, land, W, H) {
     $("shX").onclick = () => (s.hidden = true);
     if (canShare) $("pShare").onclick = () => navigator.share({ files: [file] }).catch((e) => { if (e && e.name !== "AbortError") savePhoto(file); });
   } catch (e) { toast("สร้าง PDF ไม่สำเร็จ: " + errMsg(e)); }
-  finally { btn.disabled = false; btn.textContent = "สร้าง PDF"; }
+  finally { if (stage) stage.remove(); btn.disabled = false; btn.textContent = "สร้าง PDF"; }
 }
 
 /* ---------- shared document parts ---------- */

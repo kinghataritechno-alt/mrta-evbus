@@ -19,6 +19,7 @@ const nowHM = () => bkk().toISOString().slice(11, 16);
 const dObj = (d) => new Date(d + "T00:00:00");
 const bk = (d) => { if (!d) return "–"; const x = dObj(String(d).slice(0, 10)); return `${x.getDate()} ${MS[x.getMonth()]} ${x.getFullYear() + 543}`; };
 const bkLong = (d) => { const x = dObj(d); return `วัน${DOWL[x.getDay()]}ที่ ${x.getDate()} ${MONTH[x.getMonth()]} ${x.getFullYear() + 543}`; };
+const bkD = (ts) => (ts ? new Date(Date.parse(ts) + 7 * 36e5).toISOString().slice(0, 10) : ""); // timestamp → Bangkok date
 const tHM = (ts) => ts ? new Date(new Date(ts).getTime() + 7 * 36e5).toISOString().slice(11, 16) : "";
 const iso = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
 const COLOR = { "STC-01": "var(--c1)", "STC-02": "var(--c2)", "STC-03": "var(--c3)", "STC-04": "var(--c4)" };
@@ -32,7 +33,7 @@ let VEH = [];         // vehicles visible to me
 const isMgr = () => ["ADMIN", "MANAGER"].includes(PROFILE?.role);
 const role = () => PROFILE?.role;
 
-function toast(t) { const el = $("toast"); el.textContent = t; el.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (el.hidden = true), 2800); }
+function toast(t) { if (String(t).includes(STALE)) return; const el = $("toast"); el.textContent = t; el.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (el.hidden = true), 2800); }
 function errMsg(e) {
   const m = (e && (e.message || e.error_description)) || String(e);
   if (/row-level security|permission denied/i.test(m)) return "ไม่มีสิทธิ์ทำรายการนี้";
@@ -45,7 +46,8 @@ function errMsg(e) {
 const busImg = (code) => `assets/img/${code}-thumb.jpg`;
 const vById = (id) => VEH.find((v) => v.id === id);
 const loading = () => (main().innerHTML = `<p class="loading"><span class="spin"></span>กำลังโหลด…</p>`);
-async function q(p) { const { data, error } = await p; if (error) throw error; return data; }
+// a page that is still loading after the user moved on must not draw over the new page
+async function q(p) { const s0 = route.seq; const { data, error } = await p; if (s0 !== route.seq) throw new Error(STALE); if (error) throw error; return data; }
 
 /* ---------- images ---------- */
 function shrink(file, max = 1400, quality = 0.75) {
@@ -88,6 +90,7 @@ async function boot() {
   window.addEventListener("hashchange", route);
   route();
 }
+document.addEventListener("visibilitychange", () => { if (!document.hidden && ME && ME.date !== today() && route.dayChecked !== today()) route(); });
 sb.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") location.replace("index.html"); });
 
 const NAV = () => [
@@ -101,8 +104,16 @@ function drawNav() {
   $("nav").innerHTML = NAV().map(([k, l, p]) => `<a href="#${k}" data-k="${k}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${p}</svg>${l}</a>`).join("");
 }
 const PAGES = { home, schedule, inspect, charge, maint, vehicle, report, account, password, trip: () => window.tripPage(), tripstops: () => window.tripStops(), tripreport: () => window.tripReport(), pdf: () => (window.pdfPage ? window.pdfPage() : Promise.reject(new Error("โหลดหน้าเอกสารไม่สำเร็จ ลองเปิดแอพใหม่"))) };
+const STALE = "\u2063stale";
 function route() {
-  let k = (location.hash || "#home").slice(1);
+  $("sheet").hidden = true; $("viewer").hidden = true; // never leave a sheet over a different page
+  // tab left open overnight: reload today's assignment first
+  // (once per calendar day, so a phone whose clock disagrees with the server cannot loop)
+  if (ME && ME.date !== today() && route.dayChecked !== today()) { route.dayChecked = today(); if (typeof TRIP !== "undefined") TRIP.date = null; refreshMe().then(route, route); return; }
+  route.seq = (route.seq || 0) + 1; const my = route.seq;
+  const raw = (location.hash || "#home").slice(1);
+  let k = raw.split("/")[0];
+  if (k === "maint") mTab = raw.includes("accident") ? "A" : "M";
   // drivers and technicians keep the password the admin issued (decision 26 ต.ค. 2569): no forced change, no change page
   const fixedPw = ["DRIVER", "MAINTENANCE"].includes(PROFILE.role);
   if (fixedPw && k === "password") k = "account";
@@ -114,7 +125,7 @@ function route() {
   $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", pdf: "ตารางงาน (PDF)", trip: "รายงานรอบเดินรถ", tripstops: "บันทึกผู้โดยสาร", tripreport: "รายงานรอบเดินรถประจำเดือน", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
   scrollTo(0, 0);
   loading();
-  PAGES[k]().catch((e) => (main().innerHTML = `<p class="err">${esc(errMsg(e))}</p>`));
+  PAGES[k]().catch((e) => { if (my === route.seq && !(e && e.message === STALE)) main().innerHTML = `<p class="err">${esc(errMsg(e))}</p>`; });
 }
 async function refreshMe() { ME = await q(sb.rpc("my_today")); VEH = await q(sb.from("vehicles").select("*").order("code")); }
 function myVehicles() { return isMgr() || ["MAINTENANCE"].includes(role()) ? VEH : VEH.filter((v) => (ME.vehicles || []).some((x) => x.id === v.id)); }
@@ -163,7 +174,7 @@ async function homeDriver() {
   const pend = claims.filter((c) => c.status === "pending" && c.relief_employee_id === ME.employee?.id);
   if (pend.length) h += `<p class="notice" style="margin-top:12px">รับรถแทนแล้ว รอผู้จัดการอนุมัติ ใช้รถได้ตามปกติ</p>`;
   const absent = claims.find((c) => c.absent_employee_id === ME.employee?.id && c.status !== "rejected");
-  if (absent) h += `<p class="notice" style="margin-top:12px">วันนี้มีผู้รับรถแทนคุณแล้ว (${absent.reason}) ${absent.status === "pending" ? "รออนุมัติ" : "อนุมัติแล้ว"}</p>`;
+  if (absent) h += `<p class="notice" style="margin-top:12px">วันนี้มีผู้รับรถแทนคุณแล้ว (${esc(absent.reason)}) ${absent.status === "pending" ? "รออนุมัติ" : "อนุมัติแล้ว"}</p>`;
   if (vs.length) {
     const ids = vs.map((v) => v.id);
     const [queue, insp] = await Promise.all([
@@ -443,7 +454,7 @@ async function charge() {
   CH.vid = getRun()?.vid || CH.vid || vs[0].id;
   drawCharge(vs, recent);
 }
-function recentHTML(rows) { return `<h2>บันทึกล่าสุด <small>${isMgr() ? "ทุกคัน" : "ของคุณ"}</small></h2>` + (rows.length ? `<div class="list">${rows.map((r) => { const v = vById(r.vehicle_id); return `<div class="card" style="border-left:4px solid ${v ? COLOR[v.code] : "var(--line)"}"><div class="row1"><b>${v?.code || "ไม่ระบุรถ"}</b><span class="sm">${bk(r.receipt_date || r.started_at)}${r.started_at ? " " + tHM(r.started_at) + "–" + tHM(r.ended_at) : ""}</span><span class="pill info num">${fmt(r.total)} บาท</span></div><div class="sm num">${r.receipt_no ? "ใบเสร็จ " + r.receipt_no + " · " : ""}${fmt(r.kwh, 2)} kWh${r.soc_before != null ? ` · แบต ${r.soc_before}% → ${r.soc_after}%` : ""}${r.source === "import" ? " · นำเข้า" : ""}</div></div>`; }).join("")}</div>` : `<div class="empty">ยังไม่มีบันทึกการชาร์จ</div>`); }
+function recentHTML(rows) { return `<h2>บันทึกล่าสุด <small>${isMgr() ? "ทุกคัน" : "ของคุณ"}</small></h2>` + (rows.length ? `<div class="list">${rows.map((r) => { const v = vById(r.vehicle_id); return `<div class="card" style="border-left:4px solid ${v ? COLOR[v.code] : "var(--line)"}"><div class="row1"><b>${v?.code || "ไม่ระบุรถ"}</b><span class="sm">${bk(r.receipt_date || bkD(r.started_at))}${r.started_at ? " " + tHM(r.started_at) + "–" + tHM(r.ended_at) : ""}</span><span class="pill info num">${fmt(r.total)} บาท</span></div><div class="sm num">${r.receipt_no ? "ใบเสร็จ " + r.receipt_no + " · " : ""}${fmt(r.kwh, 2)} kWh${r.soc_before != null ? ` · แบต ${r.soc_before}% → ${r.soc_after}%` : ""}${r.source === "import" ? " · นำเข้า" : ""}</div></div>`; }).join("")}</div>` : `<div class="empty">ยังไม่มีบันทึกการชาร์จ</div>`); }
 function drawCharge(vs, recent) {
   const run = getRun(), v = vById(CH.vid);
   main().innerHTML = `<h2>เลือกรถเพื่อทำการชาร์จไฟฟ้า</h2>${busPicker(vs, CH.vid)}
@@ -525,7 +536,6 @@ const KINDS = ["ชนรถยนต์", "ชนรถจักรยานย
 const FAULT = { pending: "รอสรุปฝ่ายผิด", us: "ฝ่ายเราผิด", other: "คู่กรณีผิด", none: "ไม่มีฝ่ายผิด" };
 let mTab = "M";
 async function maint() {
-  if ((location.hash || "").includes("accident")) mTab = "A";
   const canAct = isMgr() || role() === "MAINTENANCE";
   const [jobs, accs, costs, emps] = await Promise.all([
     q(sb.from("maintenance_jobs").select("*").order("reported_on", { ascending: false }).limit(100)),
@@ -543,12 +553,12 @@ async function maint() {
      ${j.photo_paths?.length ? `<div class="pics">${await pics(j.photo_paths)}</div>` : ""}
      ${canAct && j.status < 2 ? `<div class="acts">${j.status === 0 ? `<button class="btn pri" data-jstart="${j.id}">เริ่มซ่อม</button>` : ""}<button class="btn" data-jclose="${j.id}">ปิดงานซ่อม</button></div>` : ""}</div></details>`; };
   const accHTML = async (a) => { const v = vById(a.vehicle_id) || { code: "" }; const inj = a.injured_passengers + a.injured_others;
-    return `<details class="job" style="--c:${COLOR[v.code]}"><summary><div class="row1"><b>${v.code}</b><span class="type">${esc(a.kind)}</span><span class="pill ${a.severity === "serious" ? "bad" : "warn"}">${a.severity === "serious" ? "รุนแรง" : "เล็กน้อย"}</span><span class="pill ${["bad", "warn", "ok"][a.status]}" style="margin-left:0">${AST[a.status]}</span></div><div class="desc">${esc(a.description)}</div><div class="meta num"><span>${bk(a.occurred_at)} ${tHM(a.occurred_at)}</span><span>${esc(a.place)}</span><span>${inj ? `บาดเจ็บ ${inj} คน` : "ไม่มีผู้บาดเจ็บ"}</span></div></summary>
+    return `<details class="job" style="--c:${COLOR[v.code]}"><summary><div class="row1"><b>${v.code}</b><span class="type">${esc(a.kind)}</span><span class="pill ${a.severity === "serious" ? "bad" : "warn"}">${a.severity === "serious" ? "รุนแรง" : "เล็กน้อย"}</span><span class="pill ${["bad", "warn", "ok"][a.status]}" style="margin-left:0">${AST[a.status]}</span></div><div class="desc">${esc(a.description)}</div><div class="meta num"><span>${bk(bkD(a.occurred_at))} ${tHM(a.occurred_at)}</span><span>${esc(a.place)}</span><span>${inj ? `บาดเจ็บ ${inj} คน` : "ไม่มีผู้บาดเจ็บ"}</span></div></summary>
      <div class="jb"><dl class="kv"><dt>คู่กรณี</dt><dd>${a.has_counterparty ? "มี" + (a.counterparty_plate ? " · " + esc(a.counterparty_plate) : "") : "ไม่มี"}</dd><dt>ผู้บาดเจ็บ</dt><dd>ผู้โดยสาร ${a.injured_passengers} · คนขับ/คู่กรณี ${a.injured_others}</dd><dt>ฝ่ายผิด</dt><dd>${FAULT[a.fault]}</dd><dt>แจ้งความ</dt><dd>${esc(a.police_ref) || "–"}</dd><dt>เลขเคลม</dt><dd>${esc(a.claim_no) || "–"}</dd></dl>
      ${a.photo_paths?.length ? `<div class="pics">${await pics(a.photo_paths)}</div>` : ""}
      ${isMgr() && a.status < 2 ? `<div class="acts"><button class="btn" data-anext="${a.id}" data-s="${a.status + 1}">${a.status === 0 ? "เปลี่ยนเป็น รอซ่อม/รอเคลม" : "ปิดเรื่อง"}</button></div>` : ""}</div></details>`; };
   const openJ = jobs.filter((j) => j.status < 2), doneJ = jobs.filter((j) => j.status === 2), openA = accs.filter((a) => a.status < 2), doneA = accs.filter((a) => a.status === 2);
-  const mm = accs.filter((a) => (a.occurred_at || "").startsWith(m));
+  const mm = accs.filter((a) => bkD(a.occurred_at).startsWith(m));
   main().innerHTML = `<div class="tabs2" role="tablist"><button id="tM" aria-selected="${mTab === "M"}">ซ่อมบำรุง</button><button id="tA" aria-selected="${mTab === "A"}">อุบัติเหตุ</button></div>
    <div id="pM" ${mTab === "M" ? "" : "hidden"}><section class="sum"><div class="tile ${openJ.length ? "alert" : ""}"><small>งานที่ยังไม่เสร็จ</small><b class="num">${openJ.length}</b><span>รายการ</span></div><div class="tile"><small>ค่าซ่อมเดือนนี้</small><b class="num">${isMgr() ? fmt(doneJ.filter((j) => (j.done_on || "").startsWith(m)).reduce((s, j) => s + (cost(j.id) || 0), 0), 0) : "–"}</b><span>${isMgr() ? "บาท" : "เฉพาะผู้จัดการ"}</span></div><div class="tile"><small>หยุดวิ่ง (ค้าง)</small><b class="num">${openJ.filter((j) => j.vehicle_stopped).length}</b><span>คัน</span></div></section>
     <h2>งานที่ยังไม่เสร็จ</h2><div class="list">${openJ.length ? (await Promise.all(openJ.map(jobHTML))).join("") : `<div class="empty"><b>ไม่มีงานค้าง</b>รถทุกคันพร้อมใช้งาน</div>`}</div>
@@ -567,7 +577,7 @@ async function maint() {
   main().querySelectorAll("[data-anext]").forEach((b) => (b.onclick = async () => { const s = +b.dataset.s; try { await q(sb.from("accidents").update({ status: s, closed_on: s === 2 ? today() : null }).eq("id", b.dataset.anext)); toast(AST[s]); maint(); } catch (e) { toast(errMsg(e)); } }));
 }
 function picsInput(id, store) { return `<label class="btn block" style="border-style:dashed">+ แนบรูป<input type="file" accept="image/*" multiple id="${id}"></label><div class="pics" id="${id}Prev"></div>`; }
-function bindPics(id, store) { $(id).onchange = async (e) => { for (const f of e.target.files) { const b = await shrink(f); if (b) store.push(b); } e.target.value = ""; $(id + "Prev").innerHTML = store.map((b) => `<img src="${URL.createObjectURL(b)}" alt="">`).join(""); }; }
+function bindPics(id, store) { $(id).onchange = async (e) => { let bad = 0; for (const f of e.target.files) { const b = await shrink(f); if (b) store.push(b); else bad++; } if (bad) toast(`เปิดรูปไม่ได้ ${bad} รูป (เช่น HEIC) ลองถ่ายใหม่หรือเลือกรูป JPG`); e.target.value = ""; $(id + "Prev").innerHTML = store.map((b) => `<img src="${URL.createObjectURL(b)}" alt="">`).join(""); }; }
 function jobSheet() {
   const vs = myVehicles(); let vid = vs[0].id, type = TYPES[1]; const pics = [];
   const s = $("sheet");
