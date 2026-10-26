@@ -93,21 +93,16 @@ function tripSheet(v, qq, t, existing) {
 }
 
 /* draw photo + yellow timestamp block (bottom-right), like the camera-stamp photos used in the LINE group */
-function stampPhoto(file, lines, max = 1600) {
-  return new Promise((res) => {
-    const u = URL.createObjectURL(file), im = new Image();
-    im.onload = () => {
-      const s = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement("canvas");
-      c.width = Math.round(im.width * s); c.height = Math.round(im.height * s);
-      const g = c.getContext("2d"); g.drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u);
-      const fs = Math.round(c.width * 0.04), lh = fs * 1.25, pad = Math.round(fs * 0.7);
-      g.font = `700 ${fs}px "IBM Plex Sans Thai", sans-serif`; g.textAlign = "right"; g.textBaseline = "bottom";
-      g.lineJoin = "round"; g.lineWidth = Math.max(3, fs * 0.16); g.strokeStyle = "rgba(0,0,0,.85)"; g.fillStyle = "#ffd60a";
-      lines.forEach((t, i) => { const y = c.height - pad - (lines.length - 1 - i) * lh; g.strokeText(t, c.width - pad, y); g.fillText(t, c.width - pad, y); });
-      c.toBlob((b) => res(b), "image/jpeg", 0.82);
-    };
-    im.onerror = () => res(null); im.src = u;
-  });
+async function stampPhoto(file, lines, max = 1600) {
+  const d = await decodeImage(file, max);
+  if (!d) { if (isHeic(file)) toast("รูปเป็นไฟล์ HEIF: เปิดแอพกล้อง → ตั้งค่า → ปิด \"รูปภาพประสิทธิภาพสูง (HEIF)\" แล้วถ่ายใหม่"); return null; }
+  const c = document.createElement("canvas"); c.width = d.w; c.height = d.h;
+  const g = c.getContext("2d"); g.drawImage(d.src, 0, 0, d.w, d.h); if (d.url) URL.revokeObjectURL(d.url); if (d.src.close) d.src.close();
+  const fs = Math.round(c.width * 0.04), lh = fs * 1.25, pad = Math.round(fs * 0.7);
+  g.font = `700 ${fs}px "IBM Plex Sans Thai", sans-serif`; g.textAlign = "right"; g.textBaseline = "bottom";
+  g.lineJoin = "round"; g.lineWidth = Math.max(3, fs * 0.16); g.strokeStyle = "rgba(0,0,0,.85)"; g.fillStyle = "#ffd60a";
+  lines.forEach((t, i) => { const y = c.height - pad - (lines.length - 1 - i) * lh; g.strokeText(t, c.width - pad, y); g.fillText(t, c.width - pad, y); });
+  return new Promise((r) => c.toBlob(r, "image/jpeg", 0.82));
 }
 
 async function saveTrip(v, qq, t, status) {

@@ -50,22 +50,45 @@ const loading = () => (main().innerHTML = `<p class="loading"><span class="spin"
 async function q(p) { const s0 = route.seq; const { data, error } = await p; if (s0 !== route.seq) throw new Error(STALE); if (error) throw error; return data; }
 
 /* ---------- images ---------- */
-function shrink(file, max = 1400, quality = 0.75) {
+/* Decode a camera photo robustly. Samsung/Android phones produce very large (50–200 MP) or HEIF photos that the
+   plain <img> decoder rejects or runs out of memory on; createImageBitmap can downscale while decoding. */
+const isHeic = (f) => /heic|heif/i.test(f.type || "") || /\.(heic|heif)$/i.test(f.name || "");
+async function decodeImage(file, max) {
+  if (window.createImageBitmap) {
+    try { // ask the decoder for a small bitmap directly (low memory); keep EXIF orientation
+      const probe = await createImageBitmap(file, { imageOrientation: "from-image" });
+      const s = Math.min(1, max / Math.max(probe.width, probe.height)), w = Math.max(1, Math.round(probe.width * s)), h = Math.max(1, Math.round(probe.height * s));
+      if (s === 1) return { src: probe, w, h };
+      probe.close && probe.close();
+      const bm = await createImageBitmap(file, { imageOrientation: "from-image", resizeWidth: w, resizeHeight: h, resizeQuality: "high" });
+      return { src: bm, w, h };
+    } catch (e) { /* fall back to <img> */ }
+  }
   return new Promise((res) => {
     const u = URL.createObjectURL(file), im = new Image();
-    im.onload = () => {
-      const s = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement("canvas");
-      c.width = Math.round(im.width * s); c.height = Math.round(im.height * s);
-      c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u);
-      c.toBlob((b) => res(b), "image/jpeg", quality);
-    };
-    im.onerror = () => res(null); im.src = u;
+    im.onload = () => { const s = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight)); res({ src: im, w: Math.max(1, Math.round(im.naturalWidth * s)), h: Math.max(1, Math.round(im.naturalHeight * s)), url: u }); };
+    im.onerror = () => { URL.revokeObjectURL(u); res(null); };
+    im.src = u;
   });
 }
+async function shrink(file, max = 1400, quality = 0.75) {
+  const d = await decodeImage(file, max);
+  if (d) {
+    const c = document.createElement("canvas"); c.width = d.w; c.height = d.h;
+    c.getContext("2d").drawImage(d.src, 0, 0, d.w, d.h);
+    if (d.url) URL.revokeObjectURL(d.url); if (d.src.close) d.src.close();
+    const b = await new Promise((r) => c.toBlob(r, "image/jpeg", quality));
+    if (b) return b;
+  }
+  // last resort: an undecodable but standard JPEG/PNG/WebP under 10 MB is uploaded as-is
+  if ((/^image\/(jpeg|png|webp)$/i.test(file.type) || (!file.type && !isHeic(file))) && file.size <= 10 * 1024 * 1024) return file.type ? file : new Blob([file], { type: "image/jpeg" });
+  if (isHeic(file)) toast("รูปเป็นไฟล์ HEIF: เปิดแอพกล้อง → ตั้งค่า → ปิด \"รูปภาพประสิทธิภาพสูง (HEIF)\" แล้วถ่ายใหม่");
+  return null;
+}
 async function upload(vehicleId, kind, blob, i = 0) {
-  const pdf = blob.type === "application/pdf", ext = pdf ? "pdf" : blob.type === "image/png" ? "png" : "jpg";
+  const pdf = blob.type === "application/pdf", ext = pdf ? "pdf" : blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg";
   const path = `${vehicleId}/${kind}/${today()}/${Date.now()}-${i}.${ext}`;
-  const { error } = await sb.storage.from(CFG.bucket).upload(path, blob, { contentType: pdf ? "application/pdf" : blob.type === "image/png" ? "image/png" : "image/jpeg", upsert: false });
+  const { error } = await sb.storage.from(CFG.bucket).upload(path, blob, { contentType: pdf ? "application/pdf" : ["image/png", "image/webp"].includes(blob.type) ? blob.type : "image/jpeg", upsert: false });
   if (error) throw error;
   return path;
 }
@@ -410,7 +433,7 @@ function updInspect() { const m = missingIns(); $("iSend").disabled = m.length >
 function bindInspect() {
   const M = main();
   M.querySelectorAll("[data-b]").forEach((b) => (b.onclick = () => { INS.vid = b.dataset.b; drawInspect(); }));
-  M.querySelectorAll("[data-ph]").forEach((inp) => (inp.onchange = async () => { const f = inp.files[0]; if (!f) return; const i = +inp.dataset.ph; const blob = await shrink(f); if (!blob) return toast("เปิดรูปนี้ไม่ได้"); if (INS.P[i].url) URL.revokeObjectURL(INS.P[i].url); INS.P[i].blob = blob; INS.P[i].url = URL.createObjectURL(blob); drawInspect(); }));
+  M.querySelectorAll("[data-ph]").forEach((inp) => (inp.onchange = async () => { const f = inp.files[0]; if (!f) return; const i = +inp.dataset.ph; const blob = await shrink(f); if (!blob) { if (!isHeic(f)) toast("เปิดรูปนี้ไม่ได้ ลองถ่ายใหม่อีกครั้ง"); return; } if (INS.P[i].url) URL.revokeObjectURL(INS.P[i].url); INS.P[i].blob = blob; INS.P[i].url = URL.createObjectURL(blob); drawInspect(); }));
   M.querySelectorAll("button[data-k]").forEach((b) => (b.onclick = () => { const arr = b.dataset.k === "p" ? INS.P : INS.C, i = +b.dataset.i;
     if (b.dataset.v) { arr[i].st = b.dataset.v; if (b.dataset.v === "ok") arr[i].note = ""; keepNums(); drawInspect(); if (b.dataset.v === "bad") $(b.dataset.k + "n" + i)?.focus(); return; }
     if (b.dataset.chip) { const ta = $(b.dataset.k + "n" + i), v = ta.value.trim(); ta.value = v ? (v.includes(b.dataset.chip) ? v : v + ", " + b.dataset.chip) : b.dataset.chip; arr[i].note = ta.value; updInspect(); } }));
@@ -487,7 +510,7 @@ function drawCharge(vs, recent) {
     const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
     let blob = null;
     if (isPdf) { if (f.size > 10 * 1024 * 1024) { toast("ไฟล์ PDF ใหญ่เกิน 10 MB"); return; } blob = f; }
-    else { blob = await shrink(f, 1600, 0.8); if (!blob) { toast("เปิดรูปนี้ไม่ได้ ลองถ่ายภาพใหม่ หรือเลือกรูปแบบ JPG/PNG"); return; } }
+    else { blob = await shrink(f, 1600, 0.8); if (!blob) { if (!isHeic(f)) toast("เปิดรูปนี้ไม่ได้ ลองถ่ายภาพใหม่ หรือเลือกรูปแบบ JPG/PNG"); return; } }
     if (CH.url) URL.revokeObjectURL(CH.url);
     CH.blob = blob; CH.pdf = isPdf; CH.name = f.name; CH.url = URL.createObjectURL(blob);
     const keep = readCharge(); drawCharge(vs, recent); writeCharge(keep);
