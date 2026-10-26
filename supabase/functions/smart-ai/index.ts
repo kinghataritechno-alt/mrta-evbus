@@ -142,8 +142,9 @@ Deno.serve(async (req) => {
   if (!msgs.length || msgs[msgs.length - 1].role !== "user") return json({ error: "ไม่มีคำถาม" }, 400);
   while (msgs[0].role !== "user") msgs.shift();
 
-  const key = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!key) return json({ code: "no_key", error: "ยังไม่ได้ตั้งค่าคีย์ AI" }, 503);
+  // ผู้ให้บริการ AI: Claude (ANTHROPIC_API_KEY, เสียค่าใช้จ่าย) หรือ Groq (GROQ_API_KEY, ฟรีตามโควตา)
+  const key = Deno.env.get("ANTHROPIC_API_KEY"), groq = Deno.env.get("GROQ_API_KEY");
+  if (!key && !groq) return json({ code: "no_key", error: "ยังไม่ได้ตั้งค่าคีย์ AI" }, 503);
 
   // จำกัดจำนวนข้อความต่อวัน (นับใน ai_usage ถ้ามีตาราง)
   const day = new Date(Date.now() + 7 * 36e5).toISOString().slice(0, 10);
@@ -152,13 +153,25 @@ Deno.serve(async (req) => {
 
   const live = await liveData(sb);
   const system = `${RULES}\n\n<knowledge>${KNOWLEDGE}</knowledge>\n\n<live_data>\n${live.text}\n</live_data>`;
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: 800, system, messages: msgs }),
-  });
-  if (!r.ok) { const t = await r.text(); console.error("anthropic", r.status, t.slice(0, 300)); return json({ code: "upstream", error: "Smart AI ไม่ว่างชั่วคราว ลองใหม่อีกครั้ง" }, 502); }
-  const out = await r.json();
-  const text = (out.content || []).filter((c: { type: string }) => c.type === "text").map((c: { text: string }) => c.text).join("\n").trim();
+  let text = "";
+  if (key) {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model: MODEL, max_tokens: 800, system, messages: msgs }),
+    });
+    if (!r.ok) { const t = await r.text(); console.error("anthropic", r.status, t.slice(0, 300)); return json({ code: "upstream", error: "Smart AI ไม่ว่างชั่วคราว ลองใหม่อีกครั้ง" }, 502); }
+    const out = await r.json();
+    text = (out.content || []).filter((c: { type: string }) => c.type === "text").map((c: { text: string }) => c.text).join("\n").trim();
+  } else {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + groq, "content-type": "application/json" },
+      body: JSON.stringify({ model: Deno.env.get("GROQ_MODEL") || "llama-3.3-70b-versatile", max_tokens: 800, temperature: 0.2, messages: [{ role: "system", content: system }, ...msgs] }),
+    });
+    if (!r.ok) { const t = await r.text(); console.error("groq", r.status, t.slice(0, 300)); return json({ code: r.status === 429 ? "limit" : "upstream", error: r.status === 429 ? "Smart AI ใช้โควตาฟรีของวันนี้ครบแล้ว ลองใหม่ภายหลัง" : "Smart AI ไม่ว่างชั่วคราว ลองใหม่อีกครั้ง" }, 502); }
+    const out = await r.json();
+    text = String(out.choices?.[0]?.message?.content || "").trim();
+  }
   return json({ reply: text || "ขออภัยครับ ตอบไม่ได้ ลองถามใหม่อีกครั้ง" });
 });
