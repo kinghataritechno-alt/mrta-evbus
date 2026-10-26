@@ -52,6 +52,14 @@ async function q(p) { const s0 = route.seq; const { data, error } = await p; if 
 /* ---------- images ---------- */
 /* Decode a camera photo robustly. Samsung/Android phones produce very large (50–200 MP) or HEIF photos that the
    plain <img> decoder rejects or runs out of memory on; createImageBitmap can downscale while decoding. */
+/* last resort when the phone's browser cannot decode the photo (e.g. HEIF on Android): keep the original file as evidence */
+function rawPhoto(file) {
+  if (file.size > 10 * 1024 * 1024) { toast(`รูปใหญ่เกิน 10 MB (${(file.size / 1048576).toFixed(1)} MB) ลดความละเอียดกล้องแล้วถ่ายใหม่`); return null; }
+  const type = isHeic(file) ? "image/heic" : /^image\/(jpeg|png|webp)$/i.test(file.type) ? file.type : file.type ? null : "image/jpeg";
+  if (!type) { toast(`อ่านรูปไม่ได้ (ชนิดไฟล์ ${file.type}) ลองถ่ายใหม่`); return null; }
+  toast("แนบรูปต้นฉบับแล้ว (เครื่องนี้แสดงตัวอย่างรูปไม่ได้) · แนะนำปิด \"รูปภาพประสิทธิภาพสูง (HEIF)\" ในตั้งค่ากล้อง");
+  const b = new Blob([file], { type }); b.raw = true; return b;
+}
 const isHeic = (f) => /heic|heif/i.test(f.type || "") || /\.(heic|heif)$/i.test(f.name || "");
 async function decodeImage(file, max) {
   if (window.createImageBitmap) {
@@ -80,15 +88,12 @@ async function shrink(file, max = 1400, quality = 0.75) {
     const b = await new Promise((r) => c.toBlob(r, "image/jpeg", quality));
     if (b) return b;
   }
-  // last resort: an undecodable but standard JPEG/PNG/WebP under 10 MB is uploaded as-is
-  if ((/^image\/(jpeg|png|webp)$/i.test(file.type) || (!file.type && !isHeic(file))) && file.size <= 10 * 1024 * 1024) return file.type ? file : new Blob([file], { type: "image/jpeg" });
-  if (isHeic(file)) toast("รูปเป็นไฟล์ HEIF: เปิดแอพกล้อง → ตั้งค่า → ปิด \"รูปภาพประสิทธิภาพสูง (HEIF)\" แล้วถ่ายใหม่");
-  return null;
+  return rawPhoto(file);
 }
 async function upload(vehicleId, kind, blob, i = 0) {
-  const pdf = blob.type === "application/pdf", ext = pdf ? "pdf" : blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg";
+  const pdf = blob.type === "application/pdf", ext = pdf ? "pdf" : blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : blob.type === "image/heic" ? "heic" : "jpg";
   const path = `${vehicleId}/${kind}/${today()}/${Date.now()}-${i}.${ext}`;
-  const { error } = await sb.storage.from(CFG.bucket).upload(path, blob, { contentType: pdf ? "application/pdf" : ["image/png", "image/webp"].includes(blob.type) ? blob.type : "image/jpeg", upsert: false });
+  const { error } = await sb.storage.from(CFG.bucket).upload(path, blob, { contentType: pdf ? "application/pdf" : ["image/png", "image/webp", "image/heic"].includes(blob.type) ? blob.type : "image/jpeg", upsert: false });
   if (error) throw error;
   return path;
 }
@@ -97,6 +102,7 @@ async function signed(paths) {
   const { data } = await sb.storage.from(CFG.bucket).createSignedUrls(paths, 3600);
   return (data || []).map((x) => x.signedUrl).filter(Boolean);
 }
+document.addEventListener("error", (e) => { const im = e.target; if (im && im.tagName === "IMG" && String(im.src).startsWith("blob:") && !im.dataset.ph0) { im.dataset.ph0 = "1"; const sp = document.createElement("span"); sp.className = "sm"; sp.style.cssText = "display:grid;place-items:center;min-height:60px;text-align:center"; sp.textContent = "📷 แนบรูปแล้ว"; im.replaceWith(sp); } }, true);
 document.addEventListener("click", (e) => { const v = e.target.closest("[data-view]"); if (v) { $("vImg").src = v.dataset.view || v.src; $("viewer").hidden = false; } });
 
 /* ---------- boot ---------- */

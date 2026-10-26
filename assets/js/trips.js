@@ -83,7 +83,7 @@ function tripSheet(v, qq, t, existing) {
     const f = e.target.files[0]; if (!f) return;
     const shot = new Date();
     TRIP.blob = await stampPhoto(f, [`${shot.getDate()} ${MS[shot.getMonth()]} ${shot.getFullYear() + 543} ${shot.toTimeString().slice(0, 8)}`, `${v.code} · ${qq.queue_code === "R2" ? "รอบที่ " + t.no : "รอบ " + t.time + " น."}`, t.origin]);
-    if (!TRIP.blob) { toast("อ่านรูปไม่ได้ ลองถ่ายใหม่"); return; }
+    if (!TRIP.blob) return; // reason already shown
     if (TRIP.url) URL.revokeObjectURL(TRIP.url);
     TRIP.url = URL.createObjectURL(TRIP.blob); $("tPrev").src = TRIP.url; $("tPrev").style.display = "block"; $("tSave").disabled = false;
   };
@@ -95,7 +95,7 @@ function tripSheet(v, qq, t, existing) {
 /* draw photo + yellow timestamp block (bottom-right), like the camera-stamp photos used in the LINE group */
 async function stampPhoto(file, lines, max = 1600) {
   const d = await decodeImage(file, max);
-  if (!d) { if (isHeic(file)) toast("รูปเป็นไฟล์ HEIF: เปิดแอพกล้อง → ตั้งค่า → ปิด \"รูปภาพประสิทธิภาพสูง (HEIF)\" แล้วถ่ายใหม่"); return null; }
+  if (!d) return rawPhoto(file); // cannot stamp: keep the original photo; the record still has the time it was taken
   const c = document.createElement("canvas"); c.width = d.w; c.height = d.h;
   const g = c.getContext("2d"); g.drawImage(d.src, 0, 0, d.w, d.h); if (d.url) URL.revokeObjectURL(d.url); if (d.src.close) d.src.close();
   const fs = Math.round(c.width * 0.04), lh = fs * 1.25, pad = Math.round(fs * 0.7);
@@ -121,7 +121,7 @@ async function saveTrip(v, qq, t, status) {
 }
 
 function shareTrip(v, qq, t, note) {
-  const text = lineText(v, qq, t, note), file = TRIP.blob ? new File([TRIP.blob], `${v.code}_${TRIP.date}_${t.time.replace(":", "")}.jpg`, { type: "image/jpeg" }) : null;
+  const text = lineText(v, qq, t, note), file = TRIP.blob ? new File([TRIP.blob], `${v.code}_${TRIP.date}_${t.time.replace(":", "")}.${TRIP.blob.type === "image/heic" ? "heic" : "jpg"}`, { type: TRIP.blob.type || "image/jpeg" }) : null;
   const s = $("sheet");
   s.innerHTML = `<div class="in"><div class="sh"><b>บันทึกแล้ว · ส่งกลุ่ม LINE</b><button class="lnk" id="shX">ปิด</button></div>
     <pre class="sm" style="white-space:pre-wrap;background:rgba(255,255,255,.06);border-radius:10px;padding:10px;margin:0 0 10px;font-family:inherit">${esc(text)}</pre>
