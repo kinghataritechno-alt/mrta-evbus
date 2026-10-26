@@ -24,7 +24,7 @@
     if (error || !data || !data.length) return "";
     const open = data.filter((a) => !a.ack_at).length;
     return `<section class="card agentcard" style="margin-top:12px;border-color:${open ? "#ff8a8a" : "#ffd166"}">
-      <div class="row1"><b>🤖 Manager Agent แจ้งเตือน</b><span class="pill ${open ? "bad" : "warn"}">${data.length} เรื่อง</span></div>
+      <div class="row1"><b><img class="tf-ic" src="assets/img/smartai-96.png" alt="">Manager Agent แจ้งเตือน</b><span class="pill ${open ? "bad" : "warn"}">${data.length} เรื่อง</span></div>
       <p class="sm" style="margin:4px 0 8px">ข้อมูลที่ยังบันทึกไม่ครบตามขั้นตอน · กดที่หัวข้อเพื่อไปบันทึก แล้วกด "รับทราบ" · ระบบตรวจซ้ำทุกรอบและจะลบออกเองเมื่อบันทึกครบ</p>
       <div class="list">${data.sort(sortA).map((a) => {
         const k = KIND[a.kind] || [a.kind, "#home"], s = SEV[a.severity] || SEV.low;
@@ -88,7 +88,7 @@
   };
   function summaryText(d, rows, last) {
     const bad = rows.filter((r) => r.mine.length);
-    let t = `🤖 สรุปการบันทึกข้อมูล Smart Shuttle Bus EV\n${bkLong(d)}${last ? ` (ตรวจล่าสุด ${tHM(last)} น.)` : ""}\nครบถ้วน ${rows.length - bad.length} คน · มีเรื่องค้าง ${bad.length} คน\n`;
+    let t = `📋 สรุปการบันทึกข้อมูล Smart Shuttle Bus EV\n${bkLong(d)}${last ? ` (ตรวจล่าสุด ${tHM(last)} น.)` : ""}\nครบถ้วน ${rows.length - bad.length} คน · มีเรื่องค้าง ${bad.length} คน\n`;
     bad.forEach((r) => {
       t += `\n❗ ${r.name}${r.veh.size ? ` (${[...r.veh].map(vcodeOf).join(", ")})` : ""} ${r.score} คะแนน\n`;
       r.mine.forEach((a) => (t += `• ${(KIND[a.kind] || [a.kind])[0]}: ${a.detail}${a.ack_at ? " ✔รับทราบ" : ""}\n`));
@@ -114,10 +114,10 @@
   /* ผู้จัดการ: การ์ดย่อในหน้าหลัก */
   window.agentHomeCard = async function () {
     const { data, error } = await sb.from("compliance_alerts").select("employee_id,severity").eq("work_date", today()).is("resolved_at", null);
-    if (error) return `<a class="card agentlink" href="#agent" style="display:block;margin-top:12px"><b>🤖 Manager Agent</b><p class="sm" style="margin:4px 0 0">ยังไม่ได้ติดตั้งตัวตรวจ · แตะเพื่อดูวิธีติดตั้ง</p></a>`;
+    if (error) return `<a class="card agentlink" href="#agent" style="display:block;margin-top:12px"><b><img class="tf-ic" src="assets/img/smartai-96.png" alt="">Manager Agent</b><p class="sm" style="margin:4px 0 0">ยังไม่ได้ติดตั้งตัวตรวจ · แตะเพื่อดูวิธีติดตั้ง</p></a>`;
     const ppl = new Set(data.map((a) => a.employee_id)).size, hi = data.filter((a) => a.severity === "high").length;
     return `<a class="card agentlink" href="#agent" style="display:block;margin-top:12px;border-color:${hi ? "#ff8a8a" : data.length ? "#ffd166" : "var(--line)"}">
-      <div class="row1"><b>🤖 Manager Agent วันนี้</b><span class="pill ${hi ? "bad" : data.length ? "warn" : "ok"}">${data.length ? `${ppl} คน · ${data.length} เรื่อง` : "ครบถ้วน"}</span></div>
+      <div class="row1"><b><img class="tf-ic" src="assets/img/smartai-96.png" alt="">Manager Agent วันนี้</b><span class="pill ${hi ? "bad" : data.length ? "warn" : "ok"}">${data.length ? `${ppl} คน · ${data.length} เรื่อง` : "ครบถ้วน"}</span></div>
       <p class="sm" style="margin:4px 0 0">${data.length ? `มีพนักงานบันทึกไม่ครบตามขั้นตอน${hi ? ` (สำคัญ ${hi} เรื่อง)` : ""} · แตะเพื่อดูรายบุคคลและส่งสรุป LINE` : "ยังไม่พบการละเลยการบันทึก · แตะเพื่อดูสรุปหรือสั่งตรวจตอนนี้"}</p></a>`;
   };
 })();

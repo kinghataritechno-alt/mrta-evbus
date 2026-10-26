@@ -264,3 +264,4 @@ a.agentlink{color:inherit;text-decoration:none}
 .ai-hero{display:flex;gap:12px;align-items:center;padding:10px;border:1px solid var(--line);border-radius:16px;background:var(--card)}
 .ai-hero img{width:64px;height:96px;object-fit:cover;object-position:top;border-radius:12px}
 .ai-hero b{display:block;font-size:18px}.ai-hero span{font-size:13px;opacity:.8}
+.tf-ic{width:26px;height:26px;border-radius:50%;vertical-align:-7px;margin-right:6px;border:1px solid var(--line)}
