@@ -151,7 +151,7 @@ function route() {
   if ((k === "report" || k === "agent") && !isMgr()) k = "home";
   document.querySelectorAll("#nav a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.k === k) || a.setAttribute("aria-current", a.dataset.k === k ? "page" : "false"));
   document.querySelectorAll("#nav a").forEach((a) => { if (a.dataset.k === k) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
-  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", agent: "🤖 Manager Agent", ai: "🤖 Smart AI ผู้ช่วย", pdf: "ตารางงาน (PDF)", trip: "รายงานรอบเดินรถ", tripstops: "บันทึกผู้โดยสาร", tripreport: "รายงานรอบเดินรถประจำเดือน", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
+  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", agent: "🤖 Manager Agent", ai: "Smart AI ผู้ช่วย", pdf: "ตารางงาน (PDF)", trip: "รายงานรอบเดินรถ", tripstops: "บันทึกผู้โดยสาร", tripreport: "รายงานรอบเดินรถประจำเดือน", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
   scrollTo(0, 0);
   loading();
   PAGES[k]().catch((e) => { if (my === route.seq && !(e && e.message === STALE)) main().innerHTML = `<p class="err">${esc(errMsg(e))}</p>`; });
@@ -296,7 +296,7 @@ async function nextPeriodCard() {
 }
 const ic = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">${p}</svg>`;
 const ACT = {
-  ai: `<a class="act" href="#ai">${ic('<path d="M5 5h14v10H9l-4 4z"/><path d="M9 10h.01M12 10h.01M15 10h.01"/>')}Smart AI ผู้ช่วย</a>`,
+  ai: `<a class="act" href="#ai"><img src="assets/img/smartai-96.png" alt="" width="34" height="34" style="border-radius:50%">Smart AI ผู้ช่วย</a>`,
   agent: `<a class="act" href="#agent">${ic('<rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9.5 16.5h5"/>')}Manager Agent</a>`,
   trip: `<a class="act" href="#trip">${ic('<path d="M4 8.5h3l1.6-2.5h6.8L17 8.5h3v10H4z"/><circle cx="12" cy="13.2" r="3.4"/>')}รายงานรอบเดินรถ</a>`,
   inspect: `<a class="act" href="#inspect">${ic('<path d="M9 4h6v3H9z"/><rect x="5" y="5.5" width="14" height="15" rx="2"/><path d="M8.5 13l2.3 2.3L15.5 10.5"/>')}ตรวจสภาพรถ</a>`,

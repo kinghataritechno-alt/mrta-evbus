@@ -24,6 +24,7 @@
     { k: /แจ้งเตือน|manager agent|รับทราบ/i, a: "กล่อง **Manager Agent แจ้งเตือน** บนหน้าหลัก คือข้อมูลที่ยังบันทึกไม่ครบครับ\nแตะหัวข้อเพื่อไปบันทึก แล้วกด **รับทราบ** ระบบตรวจซ้ำเวลา 08:00 12:00 16:00 20:45 น. และลบออกเองเมื่อบันทึกครบ" },
   ];
   const CHIPS = ["🚌 เช็ครอบเดินรถของฉันวันนี้", "📋 ขั้นตอนประจำวัน", "📷 ถ่ายรูปรายงานรอบยังไง", "👥 บันทึกผู้โดยสารยังไง", "📤 ส่ง LINE ไม่ได้", "🖼️ ถ่ายรูปแล้วเปิดไม่ได้", "⚡ แนบใบเสร็จชาร์จ"];
+  const AV = `<img class="ai-av" src="assets/img/smartai-96.png" alt="" width="34" height="34">`;
   const md = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
   const faq = (q) => (FAQ.find((f) => f.k.test(q)) || {}).a;
 
@@ -95,9 +96,9 @@
   function draw(thinking) {
     const box = $("aiLog"); if (!box) return;
     const name = (ME.employee?.name || PROFILE.display_name || "").split(" ")[0];
-    box.innerHTML = `<div class="ai-msg bot">สวัสดีครับ${name ? " คุณ" + esc(name) : ""} ผม <b>Smart AI</b> ผู้ช่วยของแอพ Smart Shuttle Bus EV<br>ถามวิธีใช้งาน หรือให้ผมเช็ครอบเดินรถของวันนี้ได้เลยครับ</div>` +
-      H.map((m) => `<div class="ai-msg ${m.role === "user" ? "me" : "bot"}">${md(m.content)}</div>`).join("") +
-      (thinking ? `<div class="ai-msg bot"><span class="spin"></span> กำลังคิด…</div>` : "");
+    box.innerHTML = `<div class="ai-hero"><img src="assets/img/smartai-full.jpg" alt="Smart AI"><div><b>Smart AI</b><span>ผู้ช่วยคนขับ MRTA Shuttle Bus EV</span></div></div><div class="ai-row">${AV}<div class="ai-msg bot">สวัสดีครับ${name ? " คุณ" + esc(name) : ""} ผม <b>Smart AI</b> ผู้ช่วยของแอพ Smart Shuttle Bus EV<br>ถามวิธีใช้งาน หรือให้ผมเช็ครอบเดินรถของวันนี้ได้เลยครับ</div></div>` +
+      H.map((m) => m.role === "user" ? `<div class="ai-msg me">${md(m.content)}</div>` : `<div class="ai-row">${AV}<div class="ai-msg bot">${md(m.content)}</div></div>`).join("") +
+      (thinking ? `<div class="ai-row">${AV}<div class="ai-msg bot"><span class="spin"></span> กำลังคิด…</div></div>` : "");
     box.scrollTop = box.scrollHeight; scrollTo(0, document.body.scrollHeight);
   }
 
@@ -115,7 +116,7 @@
   /* ปุ่มลอยเรียก Smart AI จากทุกหน้า (ยกเว้นหน้าแชทเอง) */
   function fab() {
     let b = document.getElementById("aiFab");
-    if (!b) { b = document.createElement("a"); b.id = "aiFab"; b.href = "#ai"; b.className = "ai-fab"; b.setAttribute("aria-label", "Smart AI ผู้ช่วย"); b.innerHTML = `<span>🤖</span><b>Smart AI</b>`; document.body.appendChild(b); }
+    if (!b) { b = document.createElement("a"); b.id = "aiFab"; b.href = "#ai"; b.className = "ai-fab"; b.setAttribute("aria-label", "Smart AI ผู้ช่วย"); b.innerHTML = `<img src="assets/img/smartai-96.png" alt="" width="40" height="40"><b>Smart AI</b>`; document.body.appendChild(b); }
     b.hidden = !PROFILE || location.hash.startsWith("#ai") || location.hash.startsWith("#password");
   }
   window.addEventListener("hashchange", fab);
