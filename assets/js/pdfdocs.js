@@ -74,7 +74,7 @@ async function makePdf(fname, land, W, H) {
     stage.innerHTML = `<div class="doc" style="width:${W}px">${$("docEl").innerHTML}</div>`;
     stage.querySelectorAll(".dpg").forEach((p) => (p.style.marginBottom = "0"));
     document.body.appendChild(stage);
-    const blob = await html2pdf().set({ margin: 0, filename: fname, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: W },
+    const blob = await html2pdf().set({ margin: 0, filename: fname, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: Math.max(W, window.innerWidth), scrollX: 0, scrollY: 0 },
       jsPDF: { unit: "px", format: [W, H], orientation: land ? "landscape" : "portrait", hotfixes: ["px_scaling"] }, pagebreak: { mode: [] } }).from(stage.firstElementChild).outputPdf("blob");
     pdfBlob = blob; const url = URL.createObjectURL(blob);
     const file = new File([blob], fname, { type: "application/pdf" });

@@ -466,6 +466,7 @@ async function inspectResults() {
     <section class="sum"><div class="tile"><small>ตรวจแล้ว</small><b class="num">${done}/${VEH.length}</b><span>คัน</span></div>
       <div class="tile ${bad ? "alert" : ""}"><small>พบไม่ปกติ</small><b class="num">${bad}</b><span>ครั้ง</span></div>
       <div class="tile"><small>บันทึกทั้งหมด</small><b class="num">${rows.length}</b><span>ครั้ง</span></div></section>
+    <button class="btn pri block" id="iPdf" style="margin-top:12px">📄 รายงานตรวจรถประจำวัน (PDF) · ดู / แชร์</button>
     <h2>${bk(d)} <small>แตะเพื่อดูภาพและรายการตรวจ</small></h2>
     <div class="list">${VEH.map((v) => { const rs = rows.filter((r) => r.vehicle_id === v.id);
       return `<article class="bus" style="--c:${COLOR[v.code]}"><img src="${busImg(v.code)}" alt=""><div class="b">
@@ -474,7 +475,73 @@ async function inspectResults() {
       </div></article>`; }).join("")}</div>`;
   $("iDate").onchange = (e) => { if (e.target.value) { INSV.date = e.target.value; inspectResults(); } };
   if ($("iNew")) $("iNew").onclick = () => { INSV.mode = "form"; inspect(); };
+  $("iPdf").onclick = () => inspectPdf(d, rows, nm);
   main().querySelectorAll("[data-insp]").forEach((b) => (b.onclick = () => inspectSheet(rows.find((r) => r.id === b.dataset.insp), nm)));
+}
+/* ---- daily inspection report: one A4 page, all buses ---- */
+async function toDataURL(u) {
+  try { const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 8000); const b = await (await fetch(u, { signal: ctl.signal })).blob(); clearTimeout(t);
+    if (!/^image\/(jpeg|png|webp)/.test(b.type)) return null;
+    return await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => res(null); r.readAsDataURL(b); }); } catch (e) { return null; }
+}
+async function inspectPdf(d, rows, nm) {
+  const btn = $("iPdf"); if (!window.html2pdf) { toast("โหลดตัวสร้าง PDF ไม่ได้ ตรวจสอบอินเทอร์เน็ต"); return; }
+  btn.disabled = true; btn.innerHTML = `<span class="spin"></span> กำลังสร้างรายงาน…`;
+  let stage = null;
+  try {
+    const qv = await q(sb.from("vehicle_queue").select("vehicle_id,first_time,first_origin,queue_code").eq("work_date", d));
+    const HEX = { "STC-01": "#e5484d", "STC-02": "#e2a400", "STC-03": "#7048e8", "STC-04": "#2f9e44" };
+    const cols = VEH.map((v) => { const rs = rows.filter((r) => r.vehicle_id === v.id); return { v, r: rs[0] || null, more: rs.length - 1, qq: qv.find((x) => x.vehicle_id === v.id) }; });
+    // two evidence photos per bus (driver with bus, front) embedded as data URLs so the PDF never depends on links
+    const want = cols.flatMap((c) => (c.r ? [0, 1].map((i) => ((c.r.items || []).filter((x) => x.group === "photo")[i] || {}).photo).filter(Boolean) : []));
+    const { data: su } = want.length ? await sb.storage.from(CFG.bucket).createSignedUrls(want, 600) : { data: [] };
+    const img = {}; await Promise.all(want.map(async (pth, i) => { const u = su && su[i] && su[i].signedUrl; img[pth] = u ? await toDataURL(u) : null; }));
+    const itemOf = (c, name, grp) => (c.r ? (c.r.items || []).find((x) => x.group === grp && x.name === name) : null);
+    const cell = (x) => !x ? `<td class="ic na">–</td>` : x.status === "ok" ? `<td class="ic ok">✓</td>` : `<td class="ic bd">✗ ${esc(x.note || "ไม่ปกติ")}</td>`;
+    const late = (c) => c.r && c.qq && tHM(c.r.inspected_at) > String(c.qq.first_time).slice(0, 5);
+    const done = cols.filter((c) => c.r).length, bads = cols.filter((c) => c.r && c.r.result !== "normal");
+    const abn = cols.flatMap((c) => (c.r ? (c.r.items || []).filter((x) => x.status === "bad").map((x) => `<li><b>${c.v.code}</b> · ${esc(x.name)}: ${esc(x.note || "ไม่ปกติ")}</li>`) : []));
+    const th = cols.map((c) => `<th style="border-top:4px solid ${HEX[c.v.code]}">${c.v.code}<br><span>${c.v.plate}</span></th>`).join("");
+    const rowsInfo = [
+      ["ผลตรวจ", (c) => (c.r ? `<b style="color:${c.r.result === "normal" ? "#2f9e44" : "#c92a2a"}">${c.r.result === "normal" ? "ปกติ พร้อมให้บริการ" : "ไม่ปกติ"}</b>` : c.qq ? `<b style="color:#c92a2a">ยังไม่ตรวจ</b>` : `<span class="na">ไม่มีคิว (จอด)</span>`)],
+      ["ผู้ตรวจ", (c) => (c.r ? esc(nm(c.r.employee_id)) : "–")],
+      ["เวลาตรวจ / รอบแรก", (c) => (c.r ? `${tHM(c.r.inspected_at)} น.` : "–") + (c.qq ? ` / ${String(c.qq.first_time).slice(0, 5)} น.` : "") + (late(c) ? ` <b style="color:#c92a2a">หลังรอบแรก</b>` : "") + (c.more > 0 ? `<br><span class="na">ตรวจซ้ำอีก ${c.more} ครั้ง</span>` : "")],
+      ["แบตเตอรี่ (SOC)", (c) => (c.r && c.r.soc != null ? `<b>${c.r.soc}%</b>` + (+c.r.soc < 50 ? ` <span style="color:#c92a2a">ต่ำ</span>` : "") : "–")],
+      ["เลขไมล์ (กม.)", (c) => (c.r && c.r.odometer != null ? Number(c.r.odometer).toLocaleString("th-TH") : "–")],
+    ];
+    const photos = cols.map((c) => { const ps = c.r ? (c.r.items || []).filter((x) => x.group === "photo").slice(0, 2) : [];
+      return `<td class="ph">${[0, 1].map((i) => (ps[i] && img[ps[i].photo] ? `<img src="${img[ps[i].photo]}">` : `<div class="noimg">${c.r ? "ไม่มีภาพ" : "–"}</div>`)).join("")}</td>`; }).join("");
+    const page = `${dHead("รายงานตรวจสภาพรถก่อนออกรถประจำวัน", `MRTA Shuttle Bus · ${bkLong(d)}`)}
+      <div class="dcards">${[["ตรวจแล้ว", `${done}/${VEH.length}`, "คัน"], ["ปกติ", `${done - bads.length}`, "คัน"], ["ไม่ปกติ", `${bads.length}`, "คัน"], ["ยังไม่ตรวจ (มีคิว)", `${cols.filter((c) => !c.r && c.qq).length}`, "คัน"]].map(([a, b, u], i) => `<div class="dcard" style="--c:${["#0b2a6b", "#2f9e44", "#c92a2a", "#e2a400"][i]}"><span>${a}</span><strong>${b}</strong><span>${u}</span></div>`).join("")}</div>
+      <table class="it"><thead><tr><th class="nm">รายการ</th>${th}</tr></thead><tbody>
+      ${rowsInfo.map(([n, f]) => `<tr class="inf"><td class="nm">${n}</td>${cols.map((c) => `<td>${f(c)}</td>`).join("")}</tr>`).join("")}
+      <tr class="sec"><td colspan="5">ภาพถ่าย 9 จุด</td></tr>
+      ${PHOTOS.map(([n], i) => `<tr><td class="nm">${i + 1}. ${n}</td>${cols.map((c) => cell(itemOf(c, n, "photo"))).join("")}</tr>`).join("")}
+      <tr class="sec"><td colspan="5">ตรวจการทำงาน</td></tr>
+      ${CHECKS.map(([n]) => `<tr><td class="nm">${n}</td>${cols.map((c) => cell(itemOf(c, n, "check"))).join("")}</tr>`).join("")}
+      <tr class="sec"><td colspan="5">ภาพหลักฐาน (คนขับคู่กับรถ · ด้านหน้ารถ)</td></tr>
+      <tr><td class="nm"></td>${photos}</tr></tbody></table>
+      <h2>รายการที่ไม่ปกติ / ต้องติดตาม</h2>${abn.length ? `<ol class="abn">${abn.join("")}</ol>` : `<p class="dnote" style="margin-top:2px">ไม่พบรายการไม่ปกติ</p>`}
+      <p class="dnote">✓ ปกติ · ✗ ไม่ปกติ (พร้อมหมายเหตุของผู้ตรวจ) · – ไม่มีข้อมูล · เวลาตรวจเทียบกับรอบแรกตามคิวรถของวัน · ภาพทั้ง 9 จุดของทุกคันเก็บในระบบ ดูได้ที่เมนูตรวจสภาพรถ</p>
+      ${dSign(["ผู้จัดทำ", "หัวหน้างาน / ผู้ตรวจสอบ", "ผู้จัดการโครงการ"])}
+      <footer class="df"><span>MRTA Shuttle Bus · ข้อมูลจากระบบ ณ ${bk(today())} ${nowHM()} น.</span><span>หน้า 1/1</span></footer>`;
+    const W = 794, H = 1123, fname = `MRTA_รายงานตรวจรถประจำวัน_${d}.pdf`;
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    stage = document.createElement("div"); stage.style.cssText = `position:fixed;left:-20000px;top:0;width:${W}px;background:#fff`;
+    stage.innerHTML = `<div class="doc"><section class="dpg insp" style="width:${W}px;height:${H}px;margin:0;box-shadow:none">${page}</section></div>`;
+    document.body.appendChild(stage);
+    const blob = await html2pdf().set({ margin: 0, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: Math.max(W, window.innerWidth), scrollX: 0, scrollY: 0 },
+      jsPDF: { unit: "px", format: [W, H], orientation: "portrait", hotfixes: ["px_scaling"] }, pagebreak: { mode: [] } }).from(stage.firstElementChild).outputPdf("blob");
+    const url = URL.createObjectURL(blob), file = new File([blob], fname, { type: "application/pdf" }), canShare = navigator.canShare && navigator.canShare({ files: [file] });
+    const sh = $("sheet");
+    sh.innerHTML = `<div class="in"><div class="sh"><b>รายงานตรวจรถ ${bk(d)} พร้อมแล้ว</b><button class="lnk" id="shX">ปิด</button></div>
+      <p class="sm" style="margin:0 0 10px">${esc(fname)} · 1 หน้า · ${(blob.size / 1024).toFixed(0)} KB</p>
+      <div style="display:grid;gap:8px"><a class="btn pri block" href="${url}" target="_blank" rel="noopener">เปิดดู PDF</a>
+      ${canShare ? `<button class="btn block" id="pShare">แชร์ / ส่ง LINE</button>` : ""}<a class="btn block" href="${url}" download="${esc(fname)}">บันทึกไฟล์</a></div></div>`;
+    sh.hidden = false; $("shX").onclick = () => (sh.hidden = true);
+    if (canShare) $("pShare").onclick = () => navigator.share({ files: [file] }).catch((e) => { if (e && e.name !== "AbortError") savePhoto(file); });
+  } catch (e) { if (!(e && e.message === STALE)) toast("สร้างรายงานไม่สำเร็จ: " + errMsg(e)); }
+  finally { if (stage) stage.remove(); if ($("iPdf")) { $("iPdf").disabled = false; $("iPdf").textContent = "📄 รายงานตรวจรถประจำวัน (PDF) · ดู / แชร์"; } }
 }
 async function inspectSheet(r, nm) {
   const v = vById(r.vehicle_id), items = r.items || [], ph = items.filter((x) => x.group === "photo"), ck = items.filter((x) => x.group === "check");

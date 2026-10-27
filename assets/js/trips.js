@@ -52,6 +52,7 @@ async function tripPage() {
        <div class="sm">${esc(t.origin)}${!l && logOf(t) && pax(logOf(t)) ? `<em class="sub2">ยังไม่ถ่ายรูปรับออก · ขึ้น ${pax(logOf(t)).b} ลง ${pax(logOf(t)).a}</em>` : ""}${l ? `<em class="sub2">${l.status === "cancelled" ? "ยกเลิก" : `รายงาน ${bkkHM(l.taken_at)} น.${late ? " · ช้า" : ""}${pax(l) ? ` · ขึ้น ${pax(l).b} ลง ${pax(l).a}` : ""}`}</em>` : i === nextIdx ? `<em class="sub2">เที่ยวถัดไป · แตะเพื่อถ่ายรูปรายงาน</em>` : ""}</div></button>`; }).join("")}
    ${extra.map((l) => `<div class="day"><div class="d"><b class="num">${String(l.scheduled_time).slice(0, 5)}</b><small>เพิ่ม</small></div><div class="sm">${esc(l.origin)}<em class="sub2">รายงาน ${bkkHM(l.taken_at)} น. ${esc(l.note || "")}</em></div></div>`).join("")}</div>
    ${isMgr() || role() === "CUSTOMER" ? `<a class="btn block" href="#tripreport" style="margin-top:14px">รายงานรอบเดินรถประจำเดือน</a>` : ""}`;
+  if (isMgr() || role() === "CUSTOMER") { const g = document.querySelector("#main .grid"); if (g) g.insertAdjacentHTML("afterend", `<button class="btn pri block" id="tDay" style="margin-top:10px">📄 รายงานการเดินรถและผู้โดยสารประจำวัน (PDF) · ดู / แชร์</button>`); if ($("tDay")) $("tDay").onclick = () => dayTripPdf(TRIP.date); }
   main().querySelectorAll("[data-tv]").forEach((b) => (b.onclick = () => { TRIP.vid = b.dataset.tv; tripPage(); }));
   if ($("tDate")) $("tDate").onchange = (e) => { if (e.target.value) { TRIP.date = e.target.value; tripPage(); } };
   main().querySelectorAll("[data-trip]").forEach((b) => (b.onclick = () => tripSheet(v, qq, plan[+b.dataset.trip], done(plan[+b.dataset.trip]) || null)));
@@ -211,7 +212,7 @@ async function tripPdf(label, days, cars, G, sumC, logs, P) {
   const stage = document.createElement("div"); stage.style.cssText = `position:fixed;left:-20000px;top:0;width:${W}px;background:#fff`; stage.innerHTML = html; document.body.appendChild(stage);
   try {
     if (document.fonts?.ready) await document.fonts.ready;
-    const blob = await html2pdf().set({ margin: 0, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#fff", windowWidth: W }, jsPDF: { unit: "px", format: [W, H], orientation: "portrait", hotfixes: ["px_scaling"] }, pagebreak: { mode: [] } }).from(stage.firstElementChild).outputPdf("blob");
+    const blob = await html2pdf().set({ margin: 0, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#fff", windowWidth: Math.max(W, window.innerWidth), scrollX: 0, scrollY: 0 }, jsPDF: { unit: "px", format: [W, H], orientation: "portrait", hotfixes: ["px_scaling"] }, pagebreak: { mode: [] } }).from(stage.firstElementChild).outputPdf("blob");
     const url = URL.createObjectURL(blob), file = new File([blob], fname, { type: "application/pdf" }), canShare = navigator.canShare && navigator.canShare({ files: [file] });
     const s = $("sheet");
     s.innerHTML = `<div class="in"><div class="sh"><b>PDF พร้อมแล้ว</b><button class="lnk" id="shX">ปิด</button></div><p class="sm" style="margin:0 0 10px">${esc(fname)}</p>
@@ -313,6 +314,79 @@ function editStop(i) {
   $("eOk").onclick = async () => { r.board = Math.max(0, Math.min(200, +$("eB").value || 0)); r.alight = Math.max(0, Math.min(200, +$("eA").value || 0)); if (!r.arrived_at) r.arrived_at = new Date().toISOString(); s.hidden = true; await saveStop(r); tripStops(); };
 }
 window.tripStops = tripStops;
+
+/* ---------- daily trip + passenger report: one A4 page, every bus that ran ---------- */
+async function dayTripPdf(d) {
+  const btn = $("tDay"), label = btn ? btn.textContent : "";
+  if (!window.html2pdf) { toast("โหลดตัวสร้าง PDF ไม่ได้ ตรวจสอบอินเทอร์เน็ต"); return; }
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spin"></span> กำลังสร้างรายงาน…`; }
+  let stage = null;
+  try {
+    const [qv, logs, stops, ws, cl, emps] = await Promise.all([
+      q(sb.from("vehicle_queue").select("*").eq("work_date", d)),
+      tl(sb.from("trip_logs").select("*").eq("work_date", d)),
+      q(sb.from("trip_stops").select("*").eq("work_date", d)).catch(() => []),
+      isMgr() ? q(sb.from("work_schedules").select("employee_id,vehicle_id,status").eq("work_date", d)) : Promise.resolve([]),
+      isMgr() ? q(sb.from("cover_claims").select("vehicle_id,relief_employee_id,status").eq("work_date", d).in("status", ["pending", "approved"])) : Promise.resolve([]),
+      isMgr() ? q(sb.from("employees").select("id,full_name")) : Promise.resolve([]),
+    ]);
+    const nm = (id) => (emps.find((e) => e.id === id) || {}).full_name || "–";
+    const driverOf = (vid) => { const c = cl.find((x) => x.vehicle_id === vid); if (c) return nm(c.relief_employee_id) + " (ขับแทน)"; const w = ws.find((x) => x.vehicle_id === vid && x.status === "work"); return w ? nm(w.employee_id) : isMgr() ? "ยังไม่จัด" : "–"; };
+    const cars = VEH.filter((v) => qv.some((x) => x.vehicle_id === v.id));
+    const now = d === today() ? minsOf(nowHM()) : d < today() ? 9999 : -1;
+    const sumOf = (rs) => ({ b: rs.reduce((x, r) => x + r.board, 0), a: rs.reduce((x, r) => x + r.alight, 0) });
+    const C = cars.map((v) => {
+      const qq = qv.find((x) => x.vehicle_id === v.id), plan = tripsOf(qq.queue_code);
+      const T = plan.map((t) => { const l = logs.find((x) => x.vehicle_id === v.id && String(x.scheduled_time).slice(0, 5) === t.time && x.origin === t.origin);
+        const st = l ? stops.filter((x) => x.trip_log_id === l.id) : [], px = st.length ? sumOf(st) : null;
+        const ok = l && (l.photo_path || l.status === "cancelled"), late = ok && l.status !== "cancelled" && minsOf(tHM(l.taken_at)) > minsOf(t.time) + LATE_MIN;
+        return { t, l, px, st: l && l.status === "cancelled" ? "can" : ok ? (late ? "late" : "ok") : minsOf(t.time) + 15 <= now ? "miss" : "wait" }; });
+      const px = sumOf(stops.filter((x) => x.vehicle_id === v.id));
+      return { v, qq, T, px, ok: T.filter((x) => x.st === "ok" || x.st === "late").length, late: T.filter((x) => x.st === "late").length, can: T.filter((x) => x.st === "can").length, miss: T.filter((x) => x.st === "miss").length };
+    });
+    const tot = C.reduce((s2, c) => ({ plan: s2.plan + c.T.length, ok: s2.ok + c.ok, late: s2.late + c.late, can: s2.can + c.can, miss: s2.miss + c.miss, b: s2.b + c.px.b, a: s2.a + c.px.a }), { plan: 0, ok: 0, late: 0, can: 0, miss: 0, b: 0, a: 0 });
+    const pct = (o, p) => (p ? Math.round((o / p) * 100) : 0);
+    // passengers by stop / direction and by time slot (same trip_stops rows → totals match)
+    const byStop = {}, slot = { am: 0, off: 0, pm: 0 };
+    stops.forEach((x) => { const l = logs.find((y) => y.id === x.trip_log_id); if (!l) return; const dir = l.queue_code === "R2" ? "R2" : l.origin === ORIGIN.C ? "CC" : "LOT", k = dir + "|" + (dir === "R2" ? "MRT อิสรภาพ – รพ.ศิริราช (ทุกจุด)" : x.stop);
+      byStop[k] = byStop[k] || { b: 0, a: 0 }; byStop[k].b += x.board; byStop[k].a += x.alight; if (dir !== "R2") slot[SLOT(String(l.scheduled_time).slice(0, 5))] += x.board; });
+    const stopRows = Object.entries(byStop).filter(([, n]) => n.b || n.a).sort((x, y) => { const a = STOP_ORD.indexOf(x[0]), b = STOP_ORD.indexOf(y[0]); return (a < 0 ? 99 : a) - (b < 0 ? 99 : b); })
+      .map(([k, n]) => { const [dr, st] = k.split("|"); return `<tr><td>${{ CC: "ศูนย์ฯ → รฟม.", LOT: "รฟม. → ศูนย์ฯ", R2: "ศิริราช" }[dr]}</td><td>${esc(st)}</td><td class="r">${n.b}</td><td class="r">${n.a}</td></tr>`; }).join("");
+    const ORI = (o) => (o === ORIGIN.C ? "ศูนย์ฯ" : o === ORIGIN.R ? "รฟม." : o === ORIGIN.HQ ? "รฟม.สนญ." : "MRT อิสรภาพ");
+    const cellOf = (x) => { if (!x) return `<td></td>`; const lab = { ok: "✓", late: "✓ ช้า", can: "ยกเลิก", miss: "✗ ไม่รายงาน", wait: "รอเวลา" }[x.st], col = { ok: "#2f9e44", late: "#e67700", can: "#6b7896", miss: "#c92a2a", wait: "#8a94ad" }[x.st];
+      return `<td class="${x.st === "miss" ? "ms" : ""}"><b>${x.t.time}</b> <span class="n">${ORI(x.t.origin)}</span><br><span style="color:${col};font-weight:700">${lab}</span>${x.l && x.l.photo_path && x.st !== "can" ? ` <span class="n">${tHM(x.l.taken_at)}</span>` : ""}${x.px ? ` · <b>ขึ้น ${x.px.b}</b> ลง ${x.px.a}` : x.st === "ok" || x.st === "late" ? ` · <span style="color:#e67700">ไม่บันทึกผู้โดยสาร</span>` : ""}</td>`; };
+    const rowsN = Math.max(0, ...C.map((c) => c.T.length));
+    const matrix = Array.from({ length: rowsN }, (_, i) => `<tr><td class="c">${i + 1}</td>${C.map((c) => cellOf(c.T[i])).join("")}</tr>`).join("");
+    const page = `${dHead("รายงานการเดินรถและผู้โดยสารประจำวัน", `MRTA Shuttle Bus · ${bkLong(d)}`)}
+      <div class="dcards">${[["เที่ยวตามแผน", tot.plan, `${cars.length} คัน`], ["รายงานแล้ว", `${tot.ok}`, `${pct(tot.ok, tot.plan)}% · ช้า ${tot.late}`], ["ไม่รายงาน / ยกเลิก", `${tot.miss} / ${tot.can}`, "เที่ยว"], ["ผู้โดยสารขึ้น", tot.b.toLocaleString("th-TH"), `คน · ลง ${tot.a}`]].map(([a, b, u], i) => `<div class="dcard" style="--c:${["#0b2a6b", "#2f9e44", "#c92a2a", "#1a64ff"][i]}"><span>${a}</span><strong>${b}</strong><span>${u}</span></div>`).join("")}</div>
+      <table class="dst" style="margin-top:8px"><thead><tr><th>รถ</th><th>คิว</th><th>พนักงานขับรถ</th><th class="r">แผน</th><th class="r">รายงาน</th><th class="r">ช้า</th><th class="r">ยกเลิก</th><th class="r">ไม่รายงาน</th><th class="r">ขึ้น</th><th class="r">ลง</th></tr></thead><tbody>
+      ${C.map((c) => `<tr><td><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${VHEX[c.v.code]};margin-right:4px"></i><b>${c.v.code}</b></td><td>${esc(c.qq.queue_code)}</td><td>${esc(driverOf(c.v.id))}</td><td class="r">${c.T.length}</td><td class="r">${c.ok}</td><td class="r">${c.late}</td><td class="r">${c.can}</td><td class="r" style="${c.miss ? "color:#c92a2a;font-weight:700" : ""}">${c.miss}</td><td class="r"><b>${c.px.b}</b></td><td class="r">${c.px.a}</td></tr>`).join("")}
+      <tr><td colspan="3"><b>รวม</b></td><td class="r"><b>${tot.plan}</b></td><td class="r"><b>${tot.ok}</b></td><td class="r"><b>${tot.late}</b></td><td class="r"><b>${tot.can}</b></td><td class="r"><b>${tot.miss}</b></td><td class="r"><b>${tot.b}</b></td><td class="r"><b>${tot.a}</b></td></tr></tbody></table>
+      <h2>รายเที่ยว (เวลาออก · ต้นทาง · ผลรายงาน · ผู้โดยสาร)</h2>
+      <table class="dtm"><thead><tr><th class="c">#</th>${C.map((c) => `<th style="border-top:4px solid ${VHEX[c.v.code]}">${c.v.code} <span>${c.v.code === "STC-03" ? "ศิริราช (รอบ)" : esc(c.qq.queue_code)}</span></th>`).join("")}</tr></thead><tbody>${matrix || `<tr><td colspan="5">ไม่มีคิวรถของวันนี้</td></tr>`}</tbody></table>
+      <div style="display:flex;gap:14px;margin-top:6px"><div style="flex:1.6"><h2>ผู้โดยสารแยกจุดจอด</h2><table class="dst"><thead><tr><th>ทิศทาง</th><th>จุดจอด</th><th class="r">ขึ้น</th><th class="r">ลง</th></tr></thead><tbody>${stopRows || `<tr><td colspan="4" class="n">ยังไม่มีการบันทึกผู้โดยสาร</td></tr>`}</tbody></table></div>
+      <div style="flex:1"><h2>ช่วงเวลา (ศูนย์ฯ–รฟม.)</h2><table class="dst"><tbody><tr><td>Peak เช้า 07:15–08:40</td><td class="r">${slot.am}</td></tr><tr><td>Off-Peak 09:00–16:30</td><td class="r">${slot.off}</td></tr><tr><td>Peak เย็น 17:00–19:20</td><td class="r">${slot.pm}</td></tr></tbody></table></div></div>
+      <p class="dnote">✓ รายงานพร้อมรูปถ่ายรับออก · ช้า = รายงานหลังเวลาออกเกิน ${LATE_MIN} นาที · ✗ ไม่รายงาน = เลยเวลาออก 15 นาทีแล้วยังไม่มีรูป · ผู้โดยสารจากการบันทึกทุกจุดจอดในแอพ · ตัวเลขทุกตารางมาจากข้อมูลชุดเดียวกัน</p>
+      ${dSign(["ผู้จัดทำ", "หัวหน้างาน / ผู้ตรวจสอบ", "ผู้จัดการโครงการ"])}
+      <footer class="df"><span>MRTA Shuttle Bus · ข้อมูลจากระบบ ณ ${bk(today())} ${nowHM()} น.</span><span>หน้า 1/1</span></footer>`;
+    const W = 794, H = 1123, fname = `MRTA_รายงานการเดินรถและผู้โดยสาร_${d}.pdf`;
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    stage = document.createElement("div"); stage.style.cssText = `position:fixed;left:-20000px;top:0;width:${W}px;background:#fff`;
+    stage.innerHTML = `<div class="doc"><section class="dpg dtr" style="width:${W}px;height:${H}px;margin:0;box-shadow:none">${page}</section></div>`;
+    document.body.appendChild(stage);
+    const blob = await html2pdf().set({ margin: 0, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: Math.max(W, window.innerWidth), scrollX: 0, scrollY: 0 },
+      jsPDF: { unit: "px", format: [W, H], orientation: "portrait", hotfixes: ["px_scaling"] }, pagebreak: { mode: [] } }).from(stage.firstElementChild).outputPdf("blob");
+    const url = URL.createObjectURL(blob), file = new File([blob], fname, { type: "application/pdf" }), canShare = navigator.canShare && navigator.canShare({ files: [file] });
+    const sh = $("sheet");
+    sh.innerHTML = `<div class="in"><div class="sh"><b>รายงานการเดินรถ ${bk(d)} พร้อมแล้ว</b><button class="lnk" id="shX">ปิด</button></div>
+      <p class="sm" style="margin:0 0 10px">${esc(fname)} · 1 หน้า · ${(blob.size / 1024).toFixed(0)} KB</p>
+      <div style="display:grid;gap:8px"><a class="btn pri block" href="${url}" target="_blank" rel="noopener">เปิดดู PDF</a>
+      ${canShare ? `<button class="btn block" id="pShare">แชร์ / ส่ง LINE</button>` : ""}<a class="btn block" href="${url}" download="${esc(fname)}">บันทึกไฟล์</a></div></div>`;
+    sh.hidden = false; $("shX").onclick = () => (sh.hidden = true);
+    if (canShare) $("pShare").onclick = () => navigator.share({ files: [file] }).catch((e) => { if (e && e.name !== "AbortError") savePhoto(file); });
+  } catch (e) { if (!(e && e.message === STALE)) toast("สร้างรายงานไม่สำเร็จ: " + errMsg(e)); }
+  finally { if (stage) stage.remove(); if ($("tDay")) { $("tDay").disabled = false; $("tDay").textContent = label; } }
+}
 
 /* passenger statistics for the monthly report */
 const SLOT = (hm) => { const m = minsOf(hm); return m <= minsOf("08:40") ? "am" : m >= minsOf("17:00") ? "pm" : "off"; };
