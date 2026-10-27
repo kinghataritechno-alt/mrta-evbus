@@ -126,7 +126,7 @@
   function fab() {
     let b = document.getElementById("aiFab");
     if (!b) { b = document.createElement("a"); b.id = "aiFab"; b.href = "#ai"; b.className = "ai-fab"; b.setAttribute("aria-label", "Smart AI ผู้ช่วย"); b.innerHTML = `<img src="assets/img/smartai-96.png?v=2" alt="" width="40" height="40"><b>Smart AI</b>`; document.body.appendChild(b); }
-    b.hidden = !PROFILE || location.hash.startsWith("#ai") || location.hash.startsWith("#password");
+    b.hidden = !PROFILE || /^#(ai|password|tripstops|inspect|charge)/.test(location.hash); // keep counters and forms clear
   }
   window.addEventListener("hashchange", fab);
   const t0 = setInterval(() => { if (typeof PROFILE !== "undefined" && PROFILE) { clearInterval(t0); fab(); } }, 300);

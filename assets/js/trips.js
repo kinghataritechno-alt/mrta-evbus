@@ -270,16 +270,27 @@ async function saveStop(r) {
   const { error } = await sb.from("trip_stops").upsert(row, { onConflict: "trip_log_id,seq" });
   if (error) { const qd = (lsGet(QKEY) || []).filter((x) => !(x.trip_log_id === row.trip_log_id && x.seq === row.seq)); qd.push(row); lsSet(QKEY, qd); toast("ไม่มีสัญญาณ บันทึกไว้ในเครื่องแล้ว จะส่งให้อัตโนมัติ"); }
 }
+/* passengers on board: everyone who boarded minus everyone who alighted at earlier stops.
+   Rules: nobody alights at the first stop · alight ≤ on board · nobody boards at the last stop · everyone alights at the last stop */
+const onBefore = (R, i) => R.slice(0, i).reduce((s, r) => s + r.board - r.alight, 0);
+function paxCheck(R) {
+  for (let i = 0; i < R.length; i++) {
+    const before = onBefore(R, i);
+    if (R[i].alight > before) return `${i + 1}. ${R[i].stop}: คนลง ${R[i].alight} คน แต่บนรถมีแค่ ${before} คน`;
+  }
+  return null;
+}
 async function tripStops() {
   if (!ST) ST = lsGet(SKEY);
   if (!ST) { location.hash = "#trip"; return; }
   flushStops();
   const R = ST.rows, cur = R.findIndex((r) => !r.departed_at);
-  const tb = R.reduce((s, r) => s + r.board, 0), ta = R.reduce((s, r) => s + r.alight, 0), onboard = tb - ta;
+  const tb = R.reduce((s, r) => s + r.board, 0), ta = R.reduce((s, r) => s + r.alight, 0), onboard = tb - ta, bad = paxCheck(R);
   const hm = (ts) => (ts ? tHM(ts) : "–");
   main().innerHTML = `<section class="card"><div class="row1"><b>${ST.code} · ${ST.qc === "R2" ? "รอบที่ " + ST.no : "เที่ยว " + ST.no} · ${ST.time} น.</b><span class="pill ${cur < 0 ? "ok" : "warn"}">${cur < 0 ? "จบเที่ยว" : "กำลังวิ่ง"}</span></div>
      <p class="sm" style="margin:4px 0 0">ออกจาก${esc(ST.origin)} · ${bk(ST.date)}</p></section>
-   <section class="sum"><div class="tile"><small>ขึ้นรวม</small><b class="num">${tb}</b><span>คน</span></div><div class="tile"><small>ลงรวม</small><b class="num">${ta}</b><span>คน</span></div><div class="tile ${onboard < 0 ? "alert" : ""}"><small>บนรถตอนนี้</small><b class="num">${onboard}</b><span>คน</span></div></section>
+   <section class="sum"><div class="tile"><small>ขึ้นรวม</small><b class="num">${tb}</b><span>คน</span></div><div class="tile"><small>ลงรวม</small><b class="num">${ta}</b><span>คน</span></div><div class="tile ${onboard < 0 || bad ? "alert" : ""}"><small>บนรถตอนนี้</small><b class="num" id="sOn">${onboard}</b><span>คน</span></div></section>
+   ${bad ? `<p class="err" style="margin-top:10px">⚠️ ตัวเลขไม่สัมพันธ์กัน — ${esc(bad)} · แตะจุดนั้นเพื่อแก้ไข</p>` : cur < 0 && onboard !== 0 ? `<p class="err" style="margin-top:10px">⚠️ จบเที่ยวแล้วแต่ยังเหลือคนบนรถ ${onboard} คน · ตรวจจำนวนคนลงที่จุดสุดท้าย</p>` : cur < 0 && tb ? `<p class="okbox" style="margin-top:10px">✓ ขึ้น ${tb} = ลง ${ta} คน ตัวเลขสัมพันธ์กันครบ</p>` : ""}
    <p class="notice" style="margin-top:10px">บันทึกเฉพาะตอนรถจอดสนิทแล้วเท่านั้น ห้ามใช้โทรศัพท์ขณะขับ</p>
    <div class="list" style="margin-top:10px">${R.map((r, i) => i === cur ? stopCard(r, i, i === R.length - 1) : `<button class="day" data-st="${i}" style="text-align:left;cursor:pointer;opacity:${i > cur && cur >= 0 ? ".55" : "1"};border-left:4px solid ${r.departed_at ? "#3fa725" : "transparent"}">
        <div class="d"><b class="num">${i + 1}</b><small>${hm(r.arrived_at)}</small></div><div class="sm">${esc(r.stop)}${r.arrived_at ? `<em class="sub2">จอด ${hm(r.arrived_at)} · ออก ${hm(r.departed_at)} · ขึ้น ${r.board} ลง ${r.alight}</em>` : ""}</div></button>`).join("")}</div>
@@ -288,27 +299,50 @@ async function tripStops() {
   bindStopCard(cur);
 }
 function stopCard(r, i, last) {
+  const before = onBefore(ST.rows, i);
   const ctr = (k, l) => `<div style="flex:1"><small class="sm">${l}</small><div style="display:flex;align-items:center;gap:6px;margin-top:4px"><button class="btn" data-dec="${k}" style="min-width:52px;min-height:52px;font-size:1.4rem">−</button><b class="num" id="c_${k}" style="font-size:1.8rem;min-width:44px;text-align:center">${r[k]}</b><button class="btn pri" data-inc="${k}" style="min-width:52px;min-height:52px;font-size:1.4rem">+</button></div></div>`;
   return `<section class="card" style="border-color:#1fc2ff"><div class="row1"><b>${i + 1}. ${esc(r.stop)}</b><span class="sm">${r.arrived_at ? "จอด " + tHM(r.arrived_at) + " น." : "ยังไม่ถึง"}</span></div>
-    ${r.arrived_at ? `<div style="display:flex;gap:12px;margin-top:10px">${i === 0 ? "" : ctr("alight", "ลง")}${last ? "" : ctr("board", "ขึ้น")}</div>
+    ${r.arrived_at ? `<p class="sm" style="margin:8px 0 0">บนรถก่อนถึงจุดนี้ <b class="num">${before}</b> คน${i === 0 ? "" : ` · ลงได้ไม่เกิน <b class="num">${before}</b> คน`} · หลังออกจากจุดนี้ <b class="num" id="sAfter">${before - r.alight + r.board}</b> คน</p>
+      ${last ? `<p class="notice" style="margin-top:8px">ปลายทาง: ระบบตั้งคนลงเท่ากับคนบนรถทั้งหมด (${before} คน) ให้อัตโนมัติ ปรับลดได้ถ้ามีคนยังไม่ลง</p>` : ""}
+      <div style="display:flex;gap:12px;margin-top:10px">${i === 0 ? "" : ctr("alight", "ลง")}${last ? "" : ctr("board", "ขึ้น")}</div>
       <button class="btn block pri" id="sGo" style="margin-top:12px;min-height:54px">${last ? "ถึงปลายทาง · จบเที่ยว" : "ออกจากจุดนี้ →"}</button>`
     : `<button class="btn block pri" id="sArr" style="margin-top:10px;min-height:54px">ถึงจุดนี้แล้ว (ลงเวลาจอด)</button>`}</section>`;
 }
 function bindStopCard(cur) {
   if (cur < 0) return;
   const r = ST.rows[cur], last = cur === ST.rows.length - 1;
-  if ($("sArr")) $("sArr").onclick = async () => { r.arrived_at = new Date().toISOString(); await saveStop(r); tripStops(); };
-  main().querySelectorAll("[data-inc]").forEach((b) => (b.onclick = () => { const k = b.dataset.inc; r[k] = Math.min(200, r[k] + 1); $("c_" + k).textContent = r[k]; lsSet(SKEY, ST); }));
-  main().querySelectorAll("[data-dec]").forEach((b) => (b.onclick = () => { const k = b.dataset.dec; r[k] = Math.max(0, r[k] - 1); $("c_" + k).textContent = r[k]; lsSet(SKEY, ST); }));
-  if ($("sGo")) $("sGo").onclick = async () => { r.departed_at = new Date().toISOString(); await saveStop(r); if (last) toast("จบเที่ยวแล้ว"); tripStops(); };
+  const before = onBefore(ST.rows, cur);
+  const upd = () => { ["board", "alight"].forEach((k) => { if ($("c_" + k)) $("c_" + k).textContent = r[k]; }); if ($("sAfter")) $("sAfter").textContent = before - r.alight + r.board;
+    if ($("sOn")) $("sOn").textContent = onBefore(ST.rows, ST.rows.length); lsSet(SKEY, ST); };
+  if ($("sArr")) $("sArr").onclick = async () => { r.arrived_at = new Date().toISOString(); if (last) { r.alight = before; r.board = 0; } if (cur === 0) r.alight = 0; await saveStop(r); tripStops(); };
+  main().querySelectorAll("[data-inc]").forEach((b) => (b.onclick = () => { const k = b.dataset.inc;
+    if (k === "alight" && r.alight >= before) { toast(`บนรถมีแค่ ${before} คน ลงเกินไม่ได้`); if (navigator.vibrate) navigator.vibrate(80); return; }
+    if (k === "board" && before - r.alight + r.board >= 80) { toast("เกินความจุรถ ตรวจจำนวนอีกครั้ง"); return; }
+    r[k] = Math.min(200, r[k] + 1); upd(); }));
+  main().querySelectorAll("[data-dec]").forEach((b) => (b.onclick = () => { const k = b.dataset.dec; r[k] = Math.max(0, r[k] - 1); upd(); }));
+  if ($("sGo")) $("sGo").onclick = async () => {
+    if (r.alight > before) { toast(`คนลงเกินคนบนรถ (${before} คน) แก้ก่อนออก`); return; }
+    const left = before - r.alight + r.board;
+    if (last && left !== 0 && !confirmLeft(left)) return;
+    r.departed_at = new Date().toISOString(); await saveStop(r); if (last) toast(left ? `จบเที่ยว · ยังเหลือบนรถ ${left} คน` : "จบเที่ยวแล้ว ขึ้น-ลงครบ"); tripStops(); };
+}
+function confirmLeft(left) {
+  const b = $("sGo"); if (b.dataset.sure) return true;
+  b.dataset.sure = "1"; b.textContent = `ยังเหลือบนรถ ${left} คน · แตะอีกครั้งเพื่อยืนยันจบเที่ยว`; b.classList.add("danger"); return false;
 }
 function editStop(i) {
   const r = ST.rows[i], s = $("sheet");
   s.innerHTML = `<div class="in"><div class="sh"><b>แก้ไข ${i + 1}. ${esc(r.stop)}</b><button class="lnk" id="shX">ปิด</button></div>
+    <p class="sm" style="margin:0 0 8px">บนรถก่อนถึงจุดนี้ ${onBefore(ST.rows, i)} คน · คนลงต้องไม่เกินจำนวนนี้</p>
     <div class="grid"><div class="fld"><label for="eB">ขึ้น (คน)</label><input id="eB" type="number" inputmode="numeric" min="0" max="200" value="${r.board}"></div><div class="fld"><label for="eA">ลง (คน)</label><input id="eA" type="number" inputmode="numeric" min="0" max="200" value="${r.alight}"></div></div>
     <button class="btn block pri" id="eOk" style="margin-top:10px">บันทึก</button></div>`;
   s.hidden = false; $("shX").onclick = () => (s.hidden = true);
-  $("eOk").onclick = async () => { r.board = Math.max(0, Math.min(200, +$("eB").value || 0)); r.alight = Math.max(0, Math.min(200, +$("eA").value || 0)); if (!r.arrived_at) r.arrived_at = new Date().toISOString(); s.hidden = true; await saveStop(r); tripStops(); };
+  if (i === 0) $("eA").disabled = true; if (i === ST.rows.length - 1) $("eB").disabled = true;
+  $("eOk").onclick = async () => {
+    const nb = i === ST.rows.length - 1 ? 0 : Math.max(0, Math.min(200, +$("eB").value || 0)), na = i === 0 ? 0 : Math.max(0, Math.min(200, +$("eA").value || 0));
+    const R2 = ST.rows.map((x, j) => (j === i ? { ...x, board: nb, alight: na } : x)), bad = paxCheck(R2);
+    if (bad) { toast("แก้แล้วตัวเลขไม่สัมพันธ์: " + bad); return; }
+    r.board = nb; r.alight = na; if (!r.arrived_at) r.arrived_at = new Date().toISOString(); s.hidden = true; await saveStop(r); tripStops(); };
 }
 window.tripStops = tripStops;
 
