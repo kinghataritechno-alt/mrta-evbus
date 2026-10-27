@@ -211,46 +211,22 @@ function myVehicles() { return isMgr() || ["MAINTENANCE"].includes(role()) ? VEH
 function busPicker(list, sel, attr = "data-b") {
   return `<div class="buses">${list.map((v) => `<button class="busbtn" style="--c:${COLOR[v.code]}" aria-pressed="${v.id === sel}" ${attr}="${v.id}"><b>${v.code}</b><small class="num">${v.plate}</small></button>`).join("")}</div>`;
 }
-/* ---------- PDF ready sheet (all PDFs): open · share file · send link to LINE · save ---------- */
+/* ---------- PDF ready sheet (all PDFs): open · share file · save ---------- */
 // iPad/iPhone share sheets can hide LINE for files with Thai names → share an ASCII file name; the Thai title stays in the PDF.
 const PDF_EN = [["รายงานตรวจรถประจำวัน", "Daily_Inspection"], ["รายงานการเดินรถและผู้โดยสาร", "Daily_Trips_Passengers"], ["ตารางคิวรถและพนักงานขับรถ", "Fleet_Schedule"], ["ตารางเข้าปฏิบัติงาน", "Timesheet"], ["ใบรับรองเวลาปฏิบัติงาน", "Work_Certificate"], ["รายงานรอบเดินรถ", "Monthly_Trips"], ["ตารางงาน", "Schedule"], ["รอบ", "P"]];
 function pdfAscii(fname) { let s = fname; PDF_EN.forEach(([th, en]) => (s = s.split(th).join(en))); return s.replace(/[^\x20-\x7E]/g, "").replace(/\s+/g, "_").replace(/_+/g, "_").replace(/_(\.pdf)$/i, "$1"); }
 function pdfReady(blob, fname, title) {
   const name = pdfAscii(fname), url = URL.createObjectURL(blob), file = new File([blob], name, { type: "application/pdf" });
   const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
-  // storage rules: managers/technician may upload under any bus; drivers under today's bus; MRTA cannot read storage
-  const vid = role() === "CUSTOMER" ? null : isMgr() || role() === "MAINTENANCE" ? VEH[0]?.id : myVehicles()[0]?.id;
   const sh = $("sheet");
   sh.innerHTML = `<div class="in"><div class="sh"><b>${esc(title || "PDF พร้อมแล้ว")}</b><button class="lnk" id="shX">ปิด</button></div>
     <p class="sm" style="margin:0 0 10px">${esc(name)} · ${(blob.size / 1024).toFixed(0)} KB</p>
     <div style="display:grid;gap:8px"><a class="btn pri block" href="${url}" target="_blank" rel="noopener">เปิดดู PDF</a>
-    ${vid ? `<button class="btn block" id="pLink">💬 ส่งลิงก์เข้า LINE</button>` : ""}
     ${canShare ? `<button class="btn block" id="pShare">แชร์ไฟล์ (LINE / อีเมล / ไฟล์)</button>` : ""}
     <a class="btn block" href="${url}" download="${esc(name)}">บันทึกไฟล์</a></div>
-    ${vid ? `<p class="sm" style="margin:8px 0 0">ถ้าเมนูแชร์ไม่มี LINE ให้ใช้ "ส่งลิงก์เข้า LINE" · ลิงก์เปิดดาวน์โหลด PDF ได้ 7 วัน</p>` : ""}</div>`;
+</div>`;
   sh.hidden = false; $("shX").onclick = () => (sh.hidden = true);
-  if (canShare) $("pShare").onclick = () => navigator.share({ files: [file], title: name }).catch((e) => { if (e && e.name !== "AbortError") toast("แชร์ไฟล์ไม่ได้ ใช้ ส่งลิงก์เข้า LINE แทน"); });
-  let link = null;
-  if (vid) $("pLink").onclick = async () => {
-    const b = $("pLink");
-    // open the window inside the tap so Safari does not block it, then point it at LINE when the link is ready
-    const w = window.open("about:blank", "_blank");
-    try {
-      if (!link) {
-        b.disabled = true; b.innerHTML = `<span class="spin"></span> กำลังอัปโหลด…`;
-        const path = `${vid}/report/${today()}/${Date.now()}-${name}`;
-        const { error } = await sb.storage.from(CFG.bucket).upload(path, blob, { contentType: "application/pdf", upsert: false });
-        if (error) throw error;
-        const { data, error: e2 } = await sb.storage.from(CFG.bucket).createSignedUrl(path, 7 * 86400, { download: name });
-        if (e2) throw e2;
-        link = data.signedUrl;
-      }
-      const text = `📄 ${title || name}\n${link}`;
-      copyText(text, true);
-      if (w) w.location.href = lineURL(text); else location.href = lineURL(text);
-      b.disabled = false; b.textContent = "💬 ส่งลิงก์เข้า LINE อีกครั้ง";
-    } catch (e) { if (w) w.close(); b.disabled = false; b.textContent = "💬 ส่งลิงก์เข้า LINE"; toast("อัปโหลดไม่สำเร็จ: " + errMsg(e)); }
-  };
+  if (canShare) $("pShare").onclick = () => navigator.share({ files: [file], title: name }).catch((e) => { if (e && e.name !== "AbortError") toast("แชร์ไฟล์ไม่ได้ ลองกด บันทึกไฟล์ แล้วแนบใน LINE"); });
 }
 /* ---------- copy / LINE sharing (works on Android Chrome, iPhone Safari and LINE's in-app browser) ---------- */
 function copyFallback(t) {
