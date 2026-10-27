@@ -76,18 +76,7 @@ async function makePdf(fname, land, W, H) {
     document.body.appendChild(stage);
     const blob = await html2pdf().set({ margin: 0, filename: fname, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: Math.max(W, window.innerWidth), scrollX: 0, scrollY: 0 },
       jsPDF: { unit: "px", format: [W, H], orientation: land ? "landscape" : "portrait", hotfixes: ["px_scaling"] }, pagebreak: { mode: [] } }).from(stage.firstElementChild).outputPdf("blob");
-    pdfBlob = blob; const url = URL.createObjectURL(blob);
-    const file = new File([blob], fname, { type: "application/pdf" });
-    const canShare = navigator.canShare && navigator.canShare({ files: [file] });
-    const s = $("sheet");
-    s.innerHTML = `<div class="in"><div class="sh"><b>PDF พร้อมแล้ว</b><button class="lnk" id="shX">ปิด</button></div>
-      <p class="sm" style="margin:0 0 10px">${esc(fname)} · ${(blob.size / 1024).toFixed(0)} KB</p>
-      <div style="display:grid;gap:8px"><a class="btn block" href="${url}" target="_blank" rel="noopener">เปิดดู PDF</a>
-      ${canShare ? `<button class="btn block" id="pShare">แชร์ / ส่ง LINE</button>` : ""}
-      <a class="btn block" href="${url}" download="${esc(fname)}">บันทึกไฟล์</a></div></div>`;
-    s.hidden = false;
-    $("shX").onclick = () => (s.hidden = true);
-    if (canShare) $("pShare").onclick = () => navigator.share({ files: [file] }).catch((e) => { if (e && e.name !== "AbortError") savePhoto(file); });
+    pdfBlob = blob; pdfReady(blob, fname, fname.replace(/^MRTA_/, "").replace(/_/g, " ").replace(/\.pdf$/, ""));
   } catch (e) { toast("สร้าง PDF ไม่สำเร็จ: " + errMsg(e)); }
   finally { if (stage) stage.remove(); btn.disabled = false; btn.textContent = "สร้าง PDF"; }
 }

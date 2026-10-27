@@ -215,12 +215,7 @@ async function tripPdf(label, days, cars, G, sumC, logs, P) {
   try {
     if (document.fonts?.ready) await document.fonts.ready;
     const blob = await html2pdf().set({ margin: 0, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#fff", windowWidth: Math.max(W, window.innerWidth), scrollX: 0, scrollY: 0 }, jsPDF: { unit: "px", format: [W, H], orientation: "portrait", hotfixes: ["px_scaling"] }, pagebreak: { mode: [] } }).from(stage.firstElementChild).outputPdf("blob");
-    const url = URL.createObjectURL(blob), file = new File([blob], fname, { type: "application/pdf" }), canShare = navigator.canShare && navigator.canShare({ files: [file] });
-    const s = $("sheet");
-    s.innerHTML = `<div class="in"><div class="sh"><b>PDF พร้อมแล้ว</b><button class="lnk" id="shX">ปิด</button></div><p class="sm" style="margin:0 0 10px">${esc(fname)}</p>
-      <div style="display:grid;gap:8px"><a class="btn block" href="${url}" target="_blank" rel="noopener">เปิดดู PDF</a>${canShare ? `<button class="btn block" id="pShare">แชร์ / ส่ง LINE</button>` : ""}<a class="btn block" href="${url}" download="${esc(fname)}">บันทึกไฟล์</a></div></div>`;
-    s.hidden = false; $("shX").onclick = () => (s.hidden = true);
-    if (canShare) $("pShare").onclick = () => navigator.share({ files: [file] }).catch((e) => { if (e && e.name !== "AbortError") savePhoto(file); });
+    pdfReady(blob, fname, `รายงานรอบเดินรถประจำเดือน ${label}`);
   } catch (e) { toast("สร้าง PDF ไม่สำเร็จ: " + errMsg(e)); }
   finally { stage.remove(); }
 }
@@ -378,14 +373,7 @@ async function dayTripPdf(d) {
     document.body.appendChild(stage);
     const blob = await html2pdf().set({ margin: 0, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: Math.max(W, window.innerWidth), scrollX: 0, scrollY: 0 },
       jsPDF: { unit: "px", format: [W, H], orientation: "portrait", hotfixes: ["px_scaling"] }, pagebreak: { mode: [] } }).from(stage.firstElementChild).outputPdf("blob");
-    const url = URL.createObjectURL(blob), file = new File([blob], fname, { type: "application/pdf" }), canShare = navigator.canShare && navigator.canShare({ files: [file] });
-    const sh = $("sheet");
-    sh.innerHTML = `<div class="in"><div class="sh"><b>รายงานการเดินรถ ${bk(d)} พร้อมแล้ว</b><button class="lnk" id="shX">ปิด</button></div>
-      <p class="sm" style="margin:0 0 10px">${esc(fname)} · 1 หน้า · ${(blob.size / 1024).toFixed(0)} KB</p>
-      <div style="display:grid;gap:8px"><a class="btn pri block" href="${url}" target="_blank" rel="noopener">เปิดดู PDF</a>
-      ${canShare ? `<button class="btn block" id="pShare">แชร์ / ส่ง LINE</button>` : ""}<a class="btn block" href="${url}" download="${esc(fname)}">บันทึกไฟล์</a></div></div>`;
-    sh.hidden = false; $("shX").onclick = () => (sh.hidden = true);
-    if (canShare) $("pShare").onclick = () => navigator.share({ files: [file] }).catch((e) => { if (e && e.name !== "AbortError") savePhoto(file); });
+    pdfReady(blob, fname, `รายงานการเดินรถและผู้โดยสาร ${bk(d)}`);
   } catch (e) { if (!(e && e.message === STALE)) toast("สร้างรายงานไม่สำเร็จ: " + errMsg(e)); }
   finally { if (stage) stage.remove(); if ($("tDay")) { $("tDay").disabled = false; $("tDay").textContent = label; } }
 }
