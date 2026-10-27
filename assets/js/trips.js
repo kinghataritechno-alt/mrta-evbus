@@ -388,6 +388,49 @@ async function dayTripPdf(d) {
   finally { if (stage) stage.remove(); if ($("tDay")) { $("tDay").disabled = false; $("tDay").textContent = label; } }
 }
 
+/* ---------- live trip chart (home): y = time, x = trip number, one line per bus; tap a line → that bus's trip page ---------- */
+async function liveTrips() {
+  const el = $("liveChart"); if (!el) return;
+  clearInterval(liveTrips.t); liveTrips.t = setInterval(() => { if (!$("liveChart") || !location.hash.match(/^(#home)?$/)) return clearInterval(liveTrips.t); if (!document.hidden) liveTrips(); }, 60000);
+  const d = today(), seq = route.seq;
+  const [qv, logs] = await Promise.all([q(sb.from("vehicle_queue").select("vehicle_id,queue_code").eq("work_date", d)), tl(sb.from("trip_logs").select("vehicle_id,scheduled_time,origin,status,photo_path,taken_at").eq("work_date", d))]).catch((e) => { if (e && e.message !== STALE) el.innerHTML = `<p class="sm">${esc(errMsg(e))}</p>`; return [null, null]; });
+  if (!qv || seq !== route.seq || !$("liveChart")) return;
+  const cars = VEH.filter((v) => qv.some((x) => x.vehicle_id === v.id)).map((v) => {
+    const qq = qv.find((x) => x.vehicle_id === v.id), plan = tripsOf(qq.queue_code);
+    const pts = plan.map((t) => { const l = logs.find((x) => x.vehicle_id === v.id && String(x.scheduled_time).slice(0, 5) === t.time && x.origin === t.origin && (x.photo_path || x.status === "cancelled"));
+      return { t, l, y: l ? (l.status === "cancelled" ? minsOf(t.time) : minsOf(tHM(l.taken_at))) : null }; });
+    return { v, qq, plan, pts, done: pts.filter((p) => p.l).length };
+  });
+  if (!cars.length) { el.innerHTML = `<div class="empty">ยังไม่มีคิวรถของวันนี้</div>`; return; }
+  const now = minsOf(nowHM()), W = Math.max(300, el.clientWidth || 600), H = W < 520 ? 300 : 340, L = 44, R = 14, T = 12, B = 30;
+  const xN = Math.max(...cars.map((c) => c.plan.length)), y0 = 7 * 60, y1 = 20 * 60;
+  const X = (n) => L + ((n - 1) / Math.max(1, xN - 1)) * (W - L - R), Y = (m) => T + (1 - (Math.min(Math.max(m, y0), y1) - y0) / (y1 - y0)) * (H - T - B);
+  const col = (c) => SCOL[c.v.code] || "var(--s0)";
+  let g = "";
+  for (let h = 7; h <= 20; h++) g += `<line x1="${L}" x2="${W - R}" y1="${Y(h * 60)}" y2="${Y(h * 60)}" stroke="var(--grid)" stroke-width="1"/><text x="${L - 6}" y="${Y(h * 60) + 4}" text-anchor="end" font-size="10.5" fill="var(--muted)">${String(h).padStart(2, "0")}:00</text>`;
+  for (let n = 1; n <= xN; n++) if (xN <= 12 || n % 2 === 1 || n === xN) g += `<text x="${X(n)}" y="${H - B + 16}" text-anchor="middle" font-size="10.5" fill="var(--muted)">${n}</text>`;
+  g += `<text x="${(L + W - R) / 2}" y="${H - 2}" text-anchor="middle" font-size="10.5" fill="var(--muted)">เที่ยวที่</text>`;
+  if (now >= y0 && now <= y1) g += `<line x1="${L}" x2="${W - R}" y1="${Y(now)}" y2="${Y(now)}" stroke="var(--blue)" stroke-dasharray="4 4" stroke-width="1.4"/><text x="${W - R}" y="${Y(now) - 5}" text-anchor="end" font-size="11" font-weight="600" fill="var(--blue)">ตอนนี้ ${nowHM()}</text>`;
+  const lines = cars.map((c) => {
+    const pl = c.plan.map((t, i) => `${i ? "L" : "M"}${X(i + 1).toFixed(1)},${Y(minsOf(t.time)).toFixed(1)}`).join(" ");
+    const act = c.pts.filter((p) => p.l), al = act.map((p, i) => `${i ? "L" : "M"}${X(p.t.no).toFixed(1)},${Y(p.y).toFixed(1)}`).join(" ");
+    const miss = c.pts.filter((p) => !p.l && minsOf(p.t.time) + 15 <= now);
+    return `<g class="lv" data-lv="${c.v.id}" style="cursor:pointer"><path d="${pl}" fill="none" stroke="${col(c)}" stroke-width="1.4" stroke-dasharray="3 4" opacity=".55"/>
+      ${al ? `<path d="${al}" fill="none" stroke="${col(c)}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>` : ""}
+      ${act.map((p) => `<circle cx="${X(p.t.no)}" cy="${Y(p.y)}" r="3.6" fill="${col(c)}"><title>${c.v.code} เที่ยว ${p.t.no} · ออก ${p.t.time} ${p.t.origin} · ${p.l.status === "cancelled" ? "ยกเลิก" : "รายงาน " + tHM(p.l.taken_at) + " น."}</title></circle>`).join("")}
+      ${miss.map((p) => `<circle cx="${X(p.t.no)}" cy="${Y(minsOf(p.t.time))}" r="4" fill="var(--bg)" stroke="var(--bad)" stroke-width="2"><title>${c.v.code} เที่ยว ${p.t.no} ${p.t.time} · ยังไม่รายงาน</title></circle>`).join("")}
+      <path d="${pl}" fill="none" stroke="transparent" stroke-width="16"/>${al ? `<path d="${al}" fill="none" stroke="transparent" stroke-width="16"/>` : ""}</g>`;
+  }).join("");
+  el.innerHTML = `<div class="lv-legend">${cars.map((c) => { const missN = c.pts.filter((p) => !p.l && minsOf(p.t.time) + 15 <= now).length, nxt = c.pts.find((p) => !p.l && minsOf(p.t.time) + 15 > now);
+      return `<button class="lv-chip" data-lv="${c.v.id}" style="--c:${col(c)}"><i></i><b>${c.v.code}</b><span class="num">${c.done}/${c.plan.length}</span>${missN ? `<em class="bad">ขาด ${missN}</em>` : ""}${nxt ? `<small>ถัดไป ${nxt.t.time}</small>` : `<small>ครบวัน</small>`}</button>`; }).join("")}</div>
+    <div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="กราฟการเดินรถวันนี้">${g}${lines}</svg></div>
+    <p class="sm" style="margin:6px 0 0">เส้นทึบ = เวลาที่รายงานจริง · เส้นประ = ตามตาราง · <span style="color:var(--bad)">○</span> = เลยเวลาแล้วยังไม่รายงาน · แตะเส้นหรือชื่อรถเพื่อเปิดตารางเดินรถของคันนั้น</p>`;
+  if ($("lvAt")) $("lvAt").textContent = `อัปเดต ${nowHM()} น. · รีเฟรชเองทุก 1 นาที`;
+  el.querySelectorAll("[data-lv]").forEach((b) => (b.onclick = () => { TRIP.vid = b.dataset.lv; TRIP.date = today(); location.hash = "#trip"; }));
+  window.onresize = () => { if ($("liveChart") && Math.abs(($("liveChart").clientWidth || 0) - W) > 40) liveTrips(); };
+}
+window.liveTrips = liveTrips;
+
 /* passenger statistics for the monthly report */
 const SLOT = (hm) => { const m = minsOf(hm); return m <= minsOf("08:40") ? "am" : m >= minsOf("17:00") ? "pm" : "off"; };
 async function paxStats(a, b) {

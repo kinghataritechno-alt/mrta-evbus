@@ -358,3 +358,10 @@ a.agentlink{color:inherit;text-decoration:none}
 .doc .dtm td{border:1px solid #dde3f1;padding:1.2px 4px;vertical-align:top}
 .doc .dtm td.ms{background:#fff1f1}.doc .dtm tr:nth-child(even) td{background-color:#fafbfe}.doc .dtm tr:nth-child(even) td.ms{background:#fff1f1}
 .doc .dtr .dsign{margin-top:8px;font-size:10.5px;line-height:1.25}.doc .dtr .dnote{margin-top:4px}
+.live-card{padding:12px 12px 10px}
+.lv-legend{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.lv-chip{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:10px;background:var(--card-2);padding:5px 9px;cursor:pointer;font-size:.8rem;min-height:36px}
+.lv-chip i{width:12px;height:4px;border-radius:2px;background:var(--c)}
+.lv-chip small{color:var(--muted)}.lv-chip em{font-style:normal;font-size:.72rem;color:var(--bad);font-weight:600}
+.lv path,.lv circle{transition:opacity .15s}.chart svg:hover .lv{opacity:.35}.chart svg .lv:hover{opacity:1}
+@media (max-width:767px){.lv-legend{display:grid;grid-template-columns:1fr 1fr}.lv-chip{flex-wrap:wrap;row-gap:0;padding:5px 8px}.lv-chip small{flex-basis:100%;padding-left:18px;font-size:.7rem}}

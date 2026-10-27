@@ -291,7 +291,7 @@ async function homeFleet() {
   h = `<div class="z-top">${top}</div><div class="z-side">${h}`;
   if (isMgr()) h += await nextPeriodCard();
   if (queue.length === 0) h += `<p class="notice" style="margin-top:12px">ยังไม่มีคิวรถของวันนี้ในระบบ</p>`;
-  h += `</div><div class="z-main"><h2>รถวันนี้</h2><div class="list">` + VEH.map((v) => {
+  h += `</div><div class="z-main"><h2>การเดินรถวันนี้ <small id="lvAt">แบบเรียลไทม์ · อัปเดตทุก 1 นาที</small></h2><section class="card live-card"><div id="liveChart"><p class="loading"><span class="spin"></span>กำลังโหลดกราฟ…</p></div></section><h2>รถวันนี้</h2><div class="list">` + VEH.map((v) => {
     const w = ws.find((x) => x.vehicle_id === v.id && x.status === "work"), qq = queue.find((x) => x.vehicle_id === v.id), ins = insp.find((x) => x.vehicle_id === v.id);
     return `<article class="bus" style="--c:${COLOR[v.code]}"><img src="${busImg(v.code)}" alt=""><div class="b">
       <div class="row1"><b>${v.code}</b><span class="plate num">${v.plate}</span>${role() === "CUSTOMER" ? "" : ins ? `<span class="pill ${ins.result === "normal" ? "ok" : "bad"}">${ins.result === "normal" ? "ตรวจแล้ว" : "ไม่ปกติ"}</span>` : `<span class="pill warn">ยังไม่ตรวจ</span>`}</div>
@@ -345,6 +345,7 @@ const ACT = {
 };
 function bindHome() {
   if (window.bindShift) window.bindShift();
+  if ($("liveChart") && window.liveTrips) window.liveTrips();
   main().querySelectorAll("[data-decide]").forEach((b) => (b.onclick = async () => {
     b.disabled = true;
     try { await q(sb.rpc("decide_cover", { p_claim: b.dataset.decide, p_approve: b.dataset.ok === "1" })); toast(b.dataset.ok === "1" ? "อนุมัติแล้ว" : "ไม่อนุมัติแล้ว"); home(); }
