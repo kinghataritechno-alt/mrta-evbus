@@ -86,7 +86,8 @@ function dHead(title, sub) {
   return `<header class="dh"><img src="assets/img/mrta-logo.png" alt="" class="dm"><div class="dt"><h1>${title}</h1><p>${sub}</p></div><div class="dco"><img src="assets/img/smart-terminal-logo.png" alt=""><span>บริษัท สมาร์ท เทอร์มินอล<br>คอร์ปอเรชั่น จำกัด</span></div></header>`;
 }
 function dFoot(p, n) { return `<footer class="df"><span>MRTA Shuttle Bus · ข้อมูลจากระบบ ณ ${bk(today())} ${nowHM()} น. · ${periodSpan(pdfMonth)}</span><span>หน้า ${p}/${n}</span></footer>`; }
-const dSign = (labels) => `<div class="dsign">${labels.map((l) => `<div>${l}<br><br>วันที่ ........./........./.........</div>`).join("")}</div>`;
+// signature block: blank space to sign → dotted line → (printed name) → role → date
+const dSign = (labels) => `<div class="dsign">${labels.map((l) => `<div class="sg"><div class="sg-sp"></div><div class="sg-ln"></div><div class="sg-nm">(.......................................................)</div><div class="sg-rl">${l}</div><div class="sg-dt">วันที่ ........../........../..........</div></div>`).join("")}</div>`;
 const dnum = (d) => { const x = dObj(d); return x.getDate() === 26 || x.getDate() === 1 ? `${x.getDate()} ${MS[x.getMonth()]}` : x.getDate(); };
 const isWE = (d) => dObj(d).getDay() % 6 === 0;
 const CARS = ["STC-01", "STC-02", "STC-03", "STC-04"];
@@ -156,7 +157,7 @@ function docPerson(days, ws, e) {
   return `${dHead("ตารางปฏิบัติงานรายบุคคล " + periodLabel(pdfMonth), "MRTA Shuttle Bus · " + periodSpan(pdfMonth))}
    <div class="dinfo"><div><small>ชื่อ-นามสกุล</small><b>${esc(e.full_name)}</b></div><div><small>ตำแหน่ง</small><b>${KIND_TH[e.kind] || ""}</b></div><div><small>รถประจำ</small><b>${home}</b></div><div><small>วันหยุดประจำสัปดาห์</small><b>${e.weekly_day_off == null ? "–" : DOWL[e.weekly_day_off]}</b></div></div>
    <div class="dcards">${[["วันทำงาน", n((r) => r.status === "work"), "วัน"], ["ขับแทน", n((r) => r.status === "work" && (r.note || "").includes("แทน")), "วัน"], ["สำรอง", n((r) => r.status === "standby"), "วัน"], ["วันหยุด/ลา", n((r) => r.status === "off" || r.status === "leave"), "วัน"], ["เที่ยว/รอบที่วิ่ง", trips, "ตามคิว"]].map(([l, v, u]) => `<div class="dcard" style="--c:#0b2a6b"><span>${l}</span><strong>${v}</strong><span>${u}</span></div>`).join("")}</div>
-   <table class="dtb"><thead><tr><th>วันที่</th><th>วัน</th><th>สถานะ</th><th>รถ</th><th>คิว</th><th>รอบแรก</th><th class="r">เที่ยว</th><th>หมายเหตุ</th></tr></thead><tbody>${rows}</tbody></table>
+   <table class="dtb dperson"><thead><tr><th>วันที่</th><th>วัน</th><th>สถานะ</th><th>รถ</th><th>คิว</th><th>รอบแรก</th><th class="r">เที่ยว</th><th>หมายเหตุ</th></tr></thead><tbody>${rows}</tbody></table>
    <p class="dnote">เวลาทำงาน M3 06.30 – 15.30 น. · เที่ยวตามคิว: STC-03 นับเป็นรอบ (2 รอบ/วัน) · ตารางอาจเปลี่ยนเมื่อมีการลาหรือรับรถแทน ดูข้อมูลล่าสุดในแอพ</p>
    ${dSign(["พนักงานขับรถ", "ผู้จัดการ"])}${dFoot(1, 1)}`;
 }

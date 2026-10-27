@@ -192,7 +192,7 @@ async function tripPdf(label, days, cars, G, sumC, logs, P) {
     <tr><td><b>รวม</b></td><td></td><td class="r"><b>${tot.plan}</b></td><td class="r"><b>${tot.ok}</b></td><td class="r"><b>${pct(tot.ok, tot.plan)}</b></td><td class="r"><b>${tot.late}</b></td><td class="r"><b>${tot.can}</b></td><td class="r"><b>${Math.max(0, tot.plan - tot.ok - tot.can)}</b></td></tr></tbody></table>
     <h2>รายวัน (รายงานแล้ว/ตามแผน)</h2><table class="dtb sm xs"><thead><tr><th>วันที่</th><th>วัน</th>${cars.map((c) => `<th class="r"><i style="background:${VHEX[c]}"></i>${c}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>
     <p class="dnote">ช้า = บันทึกหลังเวลาออกตามตารางเกิน ${LATE_MIN} นาที · STC-03 เส้น MRT อิสรภาพ – รพ.ศิริราช นับเป็นรอบ · รูปถ่ายทุกเที่ยวเก็บในระบบ ดูได้ที่เมนูรอบเดินรถ</p>
-    <div class="dsign"><div>ผู้จัดทำ<br><br>วันที่ ........./........./.........</div><div>ผู้ตรวจสอบ<br><br>วันที่ ........./........./.........</div><div>ผู้อนุมัติ<br><br>วันที่ ........./........./.........</div></div>${foot(1, P && P.n ? 2 : 1)}`;
+    ${dSign(["ผู้จัดทำ", "ผู้ตรวจสอบ", "ผู้อนุมัติ"])}${foot(1, P && P.n ? 2 : 1)}`;
   let p2 = "";
   if (P && P.n) {
     const times = Object.keys(P.byTime).sort();
