@@ -120,6 +120,23 @@ async function boot() {
   route();
 }
 document.addEventListener("visibilitychange", () => { if (!document.hidden && ME && ME.date !== today() && route.dayChecked !== today()) route(); });
+/* new version check: an iPad keeps the old app open for days — compare the deployed app.html with the running build */
+const BUILD = (document.querySelector('script[src*="assets/js/app.js"]')?.getAttribute("src") || "").split("v=")[1] || "";
+async function checkUpdate() {
+  if (!BUILD || document.getElementById("updBar")) return;
+  try {
+    const html = await (await fetch("app.html?check=" + Date.now(), { cache: "no-store" })).text();
+    const live = (html.match(/assets\/js\/app\.js\?v=([0-9A-Za-z-]+)/) || [])[1];
+    if (live && live !== BUILD) {
+      const b = document.createElement("button"); b.id = "updBar"; b.className = "updbar";
+      b.innerHTML = "🔄 มีแอพเวอร์ชันใหม่ · แตะเพื่ออัปเดต"; b.onclick = () => location.reload();
+      document.body.appendChild(b);
+    }
+  } catch (e) { /* offline: try again later */ }
+}
+setInterval(() => { if (!document.hidden) checkUpdate(); }, 5 * 60000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkUpdate(); });
+setTimeout(checkUpdate, 15000);
 sb.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") location.replace("index.html"); });
 
 const NAV = () => [
