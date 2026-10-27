@@ -451,7 +451,46 @@ const PHOTOS = [
   ["ด้านหลังรถ", "ภาพรวมท้ายรถเมื่อเปิดฝาห้องเครื่อง", ["ไฟท้าย/ไฟเบรกไม่ติด", "ฝาห้องเครื่องปิดไม่สนิท"]]];
 const CHECKS = [["ระบบปรับอากาศ", ["แอร์ไม่เย็น", "แอร์มีเสียงดัง", "มีน้ำหยด"]], ["ประตูขึ้น-ลง", ["ประตูเปิดปิดช้า", "ประตูปิดไม่สนิท"]], ["ไฟหน้า ไฟเลี้ยว ไฟเบรก", ["ไฟเลี้ยวไม่ติด", "ไฟเบรกไม่ติด"]], ["เบรกและเบรกมือ", ["เบรกมีเสียง", "เบรกมือไม่อยู่"]], ["ยางและล้อ", ["ยางอ่อน", "ยางสึกมาก"]], ["ที่ปัดน้ำฝน แตร", ["ที่ปัดน้ำฝนไม่ทำงาน", "แตรไม่ดัง"]], ["จอ LED ป้ายเส้นทาง", ["จอ LED ไม่ติด", "แสดงเส้นทางผิด"]], ["กล้องและ GPS", ["กล้องไม่บันทึก", "GPS ไม่ส่งตำแหน่ง"]]];
 let INS = null;
+/* ---- inspection results (managers / technician / MRTA): what was checked, by whom, photos ---- */
+let INSV = { mode: "view", date: null };
+async function inspectResults() {
+  const d = INSV.date || (INSV.date = today()), nx = iso(new Date(dObj(d).getTime() + 864e5));
+  const [rows, emps] = await Promise.all([
+    q(sb.from("inspections").select("*").gte("inspected_at", d + "T00:00:00+07:00").lt("inspected_at", nx + "T00:00:00+07:00").order("inspected_at")),
+    isMgr() ? q(sb.from("employees").select("id,full_name")) : Promise.resolve([]),
+  ]);
+  const nm = (id) => (emps.find((e) => e.id === id) || {}).full_name || (id === ME.employee?.id ? ME.employee.name : "–");
+  const done = VEH.filter((v) => rows.some((r) => r.vehicle_id === v.id)).length, bad = rows.filter((r) => r.result !== "normal").length;
+  main().innerHTML = `${isMgr() || role() === "MAINTENANCE" ? `<div class="tabs2"><button aria-selected="true">ผลตรวจสภาพรถ</button><button id="iNew">ตรวจรถ (บันทึกใหม่)</button></div>` : ""}
+    <div class="fld" style="margin-top:12px"><label for="iDate">วันที่</label><input type="date" id="iDate" value="${d}" max="${today()}"></div>
+    <section class="sum"><div class="tile"><small>ตรวจแล้ว</small><b class="num">${done}/${VEH.length}</b><span>คัน</span></div>
+      <div class="tile ${bad ? "alert" : ""}"><small>พบไม่ปกติ</small><b class="num">${bad}</b><span>ครั้ง</span></div>
+      <div class="tile"><small>บันทึกทั้งหมด</small><b class="num">${rows.length}</b><span>ครั้ง</span></div></section>
+    <h2>${bk(d)} <small>แตะเพื่อดูภาพและรายการตรวจ</small></h2>
+    <div class="list">${VEH.map((v) => { const rs = rows.filter((r) => r.vehicle_id === v.id);
+      return `<article class="bus" style="--c:${COLOR[v.code]}"><img src="${busImg(v.code)}" alt=""><div class="b">
+        <div class="row1"><b>${v.code}</b><span class="plate num">${v.plate}</span>${rs.length ? `<span class="pill ${rs.some((r) => r.result !== "normal") ? "bad" : "ok"}">${rs.some((r) => r.result !== "normal") ? "ไม่ปกติ" : "ปกติ"}</span>` : `<span class="pill warn">ยังไม่ตรวจ</span>`}</div>
+        ${rs.length ? rs.map((r) => `<button class="lnk" style="text-align:left;padding:0" data-insp="${r.id}">🕒 <b class="num">${tHM(r.inspected_at)} น.</b> · ${esc(nm(r.employee_id))} · แบต <b class="num">${r.soc ?? "–"}%</b> · ไมล์ <b class="num">${r.odometer != null ? Number(r.odometer).toLocaleString("th-TH") : "–"}</b> ›</button>`).join("") : `<div class="sm">ยังไม่มีผลตรวจของวันนี้</div>`}
+      </div></article>`; }).join("")}</div>`;
+  $("iDate").onchange = (e) => { if (e.target.value) { INSV.date = e.target.value; inspectResults(); } };
+  if ($("iNew")) $("iNew").onclick = () => { INSV.mode = "form"; inspect(); };
+  main().querySelectorAll("[data-insp]").forEach((b) => (b.onclick = () => inspectSheet(rows.find((r) => r.id === b.dataset.insp), nm)));
+}
+async function inspectSheet(r, nm) {
+  const v = vById(r.vehicle_id), items = r.items || [], ph = items.filter((x) => x.group === "photo"), ck = items.filter((x) => x.group === "check");
+  const s = $("sheet");
+  s.innerHTML = `<div class="in"><div class="sh"><b>${v.code} · ตรวจ ${tHM(r.inspected_at)} น.</b><button class="lnk" id="shX">ปิด</button></div>
+    <p class="sm" style="margin:0">${bk(bkD(r.inspected_at))} · ${esc(nm(r.employee_id))} · แบต ${r.soc ?? "–"}% · ไมล์ ${r.odometer ?? "–"} · <span class="pill ${r.result === "normal" ? "ok" : "bad"}" style="margin:0">${r.result === "normal" ? "ปกติ" : "ไม่ปกติ"}</span></p>
+    <h2 style="margin-top:8px">ภาพ ${ph.length} จุด</h2><div class="list" id="insPh">${ph.map((x, i) => `<div class="card" style="padding:8px"><div class="row1"><span class="sm"><b>${i + 1}. ${esc(x.name)}</b></span><span class="pill ${x.status === "ok" ? "ok" : "bad"}">${x.status === "ok" ? "ปกติ" : "ไม่ปกติ"}</span></div>${x.note ? `<p class="sm" style="margin:4px 0 0;color:var(--bad)">${esc(x.note)}</p>` : ""}<div class="ph" data-p="${esc(x.photo || "")}" style="margin-top:6px;min-height:40px"><span class="sm">กำลังโหลดภาพ…</span></div></div>`).join("")}</div>
+    <h2>ตรวจการทำงาน</h2><section class="checks">${ck.map((x) => `<div class="ck"><div class="row1"><span>${esc(x.name)}</span><span class="pill ${x.status === "ok" ? "ok" : "bad"}">${x.status === "ok" ? "ปกติ" : "ไม่ปกติ"}</span></div>${x.note ? `<span class="sm" style="color:var(--bad)">${esc(x.note)}</span>` : ""}</div>`).join("")}</section></div>`;
+  s.hidden = false; $("shX").onclick = () => (s.hidden = true);
+  const boxes = [...s.querySelectorAll(".ph[data-p]")].filter((b) => b.dataset.p);
+  const { data } = await sb.storage.from(CFG.bucket).createSignedUrls(boxes.map((b) => b.dataset.p), 3600);
+  boxes.forEach((b, i) => { const u = data && data[i] && data[i].signedUrl; b.innerHTML = u ? (/\.(heic|heif)$/i.test(b.dataset.p) ? `<a class="lnk" href="${u}" target="_blank" rel="noopener">เปิดภาพต้นฉบับ (HEIC)</a>` : `<img src="${u}" data-view="${u}" alt="" style="width:100%;max-height:260px;object-fit:cover;border-radius:10px;cursor:zoom-in">`) : `<span class="sm">ไม่มีภาพ</span>`; });
+}
 async function inspect() {
+  if ((isMgr() || role() === "MAINTENANCE") && INSV.mode !== "form") return inspectResults();
+  INSV.mode = "view";
   const vs = myVehicles();
   if (!vs.length) { main().innerHTML = `<div class="empty" style="margin-top:16px"><b>วันนี้ไม่มีรถที่ได้รับมอบหมาย</b>ตรวจสภาพรถได้เมื่อมีรถในตารางงานของคุณ</div>`; return; }
   INS = { vid: vs[0].id, P: PHOTOS.map(() => ({ blob: null, url: null, st: null, note: "" })), C: CHECKS.map(() => ({ st: null, note: "" })) };
