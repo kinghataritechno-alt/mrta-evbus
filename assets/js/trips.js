@@ -60,7 +60,9 @@ async function tripPage() {
 
 function lineText(v, qq, t, note) {
   const isR2 = qq.queue_code === "R2";
-  const head = isR2 ? `${v.code} สแตนด์บาย รับออก รอบที่ ${t.no}\nเวลา ${t.time.replace(":", ".")} น.\n${ROUTE.R2}` : `${v.code} สแตนด์บายรับออก\nรอบ ${t.time} น. ${t.origin}`;
+  // same layout the LINE group already uses: bus / สแตนด์บายรับออก / รอบ 09.40 น. <pick-up point> 📍
+  const place = t.origin === ORIGIN.C ? P_CC : t.origin === ORIGIN.R ? P_LOT : t.origin;
+  const head = isR2 ? `${v.code}\nสแตนด์บายรับออก รอบที่ ${t.no}\nเวลา ${t.time.replace(":", ".")} น. ${t.origin} 📍\n${ROUTE.R2}` : `${v.code}\nสแตนด์บายรับออก\nรอบ ${t.time.replace(":", ".")} น. ${place} 📍`;
   return head + (note ? `\n${note}` : "");
 }
 
