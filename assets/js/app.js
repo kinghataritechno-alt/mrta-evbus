@@ -139,7 +139,14 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) chec
 setTimeout(checkUpdate, 15000);
 sb.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") location.replace("index.html"); });
 
-const NAV = () => [
+const NAV_DRIVER = () => [
+  ["home", "หน้าหลัก", '<path d="M4 11 12 4l8 7v8.5a.5.5 0 0 1-.5.5H15v-6H9v6H4.5a.5.5 0 0 1-.5-.5z"/>'],
+  ["vehicle", "รถของฉัน", '<rect x="4.5" y="4" width="15" height="13" rx="2.5"/><path d="M4.5 11h15M7.5 20v-3M16.5 20v-3"/>'],
+  ["trip", "รายงาน", '<path d="M9 4h6v3H9z"/><rect x="5" y="5.5" width="14" height="15" rx="2"/><path d="M8.5 13l2.3 2.3L15.5 10.5"/>'],
+  ["alerts", "แจ้งเตือน", '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>'],
+  ["account", "บัญชีผู้ใช้", '<circle cx="12" cy="8" r="4"/><path d="M4.5 20c1.2-3.6 4-5.4 7.5-5.4s6.3 1.8 7.5 5.4"/>'],
+];
+const NAV = () => PROFILE.role === "DRIVER" ? NAV_DRIVER() : [
   ["home", "หน้าหลัก", '<path d="M4 11 12 4l8 7v8.5a.5.5 0 0 1-.5.5H15v-6H9v6H4.5a.5.5 0 0 1-.5-.5z"/>'],
   ["schedule", "ตารางงาน", '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>'],
   ["vehicle", "ข้อมูลรถ", '<rect x="4.5" y="4" width="15" height="13" rx="2.5"/><path d="M4.5 11h15M7.5 20v-3M16.5 20v-3"/>'],
@@ -148,7 +155,7 @@ const NAV = () => [
 ];
 function drawNav() {
   $("nav").innerHTML = NAV().map(([k, l, p]) => `<a href="#${k}" data-k="${k}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${p}</svg>${l}</a>`).join("");
-  drawSide();
+  drawSide(); setBell();
 }
 /* Tablet / PC: sidebar with every module the role may use, grouped like a platform */
 const SVG = {
@@ -164,12 +171,13 @@ const SVG = {
   report: '<path d="M4 19h16"/><path d="M6 15l4-5 3 3 5-7"/>',
   tripreport: '<path d="M4 19h16"/><rect x="6" y="11" width="3" height="6"/><rect x="11" y="7" width="3" height="10"/><rect x="16" y="13" width="3" height="4"/>',
   drivers: '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.9-3 3-4.6 5.5-4.6s4.6 1.6 5.5 4.6"/><path d="M15 6.5h5M15 10h5M16.5 13.5h3.5"/>',
+  alerts: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   account: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20c1.2-3.6 4-5.4 7.5-5.4s6.3 1.8 7.5 5.4"/>',
 };
 function sideItems() {
   const r = role(), mgr = isMgr(), cust = r === "CUSTOMER", robot = '<img src="assets/img/smartai-96.png?v=2" alt="">';
   const g = [
-    ["ภาพรวม", [["home", "หน้าหลัก"], mgr && ["agent", "Manager Agent", robot], mgr && ["report", "รายงานการชาร์จไฟฟ้า"], (mgr || cust) && ["tripreport", "รายงานรอบเดินรถ"]]],
+    ["ภาพรวม", [["home", "หน้าหลัก"], ["DRIVER", "MAINTENANCE"].includes(r) && ["alerts", "แจ้งเตือน"], mgr && ["agent", "Manager Agent", robot], mgr && ["report", "รายงานการชาร์จไฟฟ้า"], (mgr || cust) && ["tripreport", "รายงานรอบเดินรถ"]]],
     ["งานประจำวัน", [["trip", "รอบเดินรถ"], !cust && ["inspect", "ตรวจสภาพรถ"], !cust && ["charge", "บันทึกการชาร์จ"], !cust && ["maint", "ซ่อมบำรุง"], !cust && !mgr && ["maint/accident", "แจ้งอุบัติเหตุ", SVG.accident]]],
     ["ข้อมูล", [mgr && ["drivers", "ข้อมูลคนขับ"], ["schedule", "ตารางงาน"], !cust && ["pdf", "ตารางงาน (PDF)"], ["vehicle", "ข้อมูลรถ"]]],
     ["ช่วยเหลือ", [!cust && ["ai", "Smart AI ผู้ช่วย", robot], ["account", "บัญชีผู้ใช้"]]],
@@ -182,7 +190,7 @@ function drawSide() {
     <nav aria-label="เมนูทั้งหมด">${sideItems().map(([h, xs]) => `<p class="sgrp">${h}</p>` + xs.map(([k, l, ico]) => `<a href="#${k}" data-k="${k.split("/")[0]}"${k.includes("/") ? ` data-sub="${k}"` : ""} title="${l}">${ico && ico.startsWith("<img") ? ico : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${ico || SVG[k] || ""}</svg>`}<span>${l}</span></a>`).join("")).join("")}</nav>
     <div class="sme"><b>${esc(PROFILE.display_name || PROFILE.username)}</b><span>${ROLE_TH[PROFILE.role] || ""}</span></div>`;
 }
-const PAGES = { home, schedule, inspect, charge, maint, vehicle, report, account, password, trip: () => window.tripPage(), tripstops: () => window.tripStops(), tripreport: () => window.tripReport(), drivers: () => (window.driversPage ? window.driversPage() : Promise.reject(new Error("โหลดหน้าข้อมูลคนขับไม่สำเร็จ ลองเปิดแอพใหม่"))), ai: () => (window.aiPage ? window.aiPage() : Promise.reject(new Error("โหลด Smart AI ไม่สำเร็จ ลองเปิดแอพใหม่"))), agent: () => (window.agentPage ? window.agentPage() : Promise.reject(new Error("โหลดหน้า Manager Agent ไม่สำเร็จ ลองเปิดแอพใหม่"))), pdf: () => (window.pdfPage ? window.pdfPage() : Promise.reject(new Error("โหลดหน้าเอกสารไม่สำเร็จ ลองเปิดแอพใหม่"))) };
+const PAGES = { home, alerts, schedule, inspect, charge, maint, vehicle, report, account, password, trip: () => window.tripPage(), tripstops: () => window.tripStops(), tripreport: () => window.tripReport(), drivers: () => (window.driversPage ? window.driversPage() : Promise.reject(new Error("โหลดหน้าข้อมูลคนขับไม่สำเร็จ ลองเปิดแอพใหม่"))), ai: () => (window.aiPage ? window.aiPage() : Promise.reject(new Error("โหลด Smart AI ไม่สำเร็จ ลองเปิดแอพใหม่"))), agent: () => (window.agentPage ? window.agentPage() : Promise.reject(new Error("โหลดหน้า Manager Agent ไม่สำเร็จ ลองเปิดแอพใหม่"))), pdf: () => (window.pdfPage ? window.pdfPage() : Promise.reject(new Error("โหลดหน้าเอกสารไม่สำเร็จ ลองเปิดแอพใหม่"))) };
 const STALE = "\u2063stale";
 function route() {
   $("sheet").hidden = true; $("viewer").hidden = true; // never leave a sheet over a different page
@@ -202,7 +210,7 @@ function route() {
   document.querySelectorAll("#nav a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.k === k) || a.setAttribute("aria-current", a.dataset.k === k ? "page" : "false"));
   document.querySelectorAll("#nav a, #side a").forEach((a) => { const on = a.dataset.sub ? raw === a.dataset.sub : a.dataset.k === k && !(k === "maint" && raw.includes("accident") && a.closest("#side") && document.querySelector('#side a[data-sub="maint/accident"]')); if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
   main().dataset.page = k;
-  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", agent: "Manager Agent", ai: "Smart AI ผู้ช่วย", drivers: "ข้อมูลคนขับ", pdf: "ตารางงาน (PDF)", trip: "รายงานรอบเดินรถ", tripstops: "บันทึกผู้โดยสาร", tripreport: "รายงานรอบเดินรถประจำเดือน", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
+  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", agent: "Manager Agent", alerts: "แจ้งเตือน", ai: "Smart AI ผู้ช่วย", drivers: "ข้อมูลคนขับ", pdf: "ตารางงาน (PDF)", trip: "รายงานรอบเดินรถ", tripstops: "บันทึกผู้โดยสาร", tripreport: "รายงานรอบเดินรถประจำเดือน", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
   scrollTo(0, 0);
   loading();
   PAGES[k]().catch((e) => { if (my === route.seq && !(e && e.message === STALE)) main().innerHTML = `<p class="err">${esc(errMsg(e))}</p>`; });
@@ -258,40 +266,91 @@ function savePhoto(file) {
 /* ================= HOME ================= */
 async function home() {
   const d = ME.date, name = ME.employee?.name || PROFILE.display_name;
-  let html = `<div class="z-head"><h1 class="hello">สวัสดี ${esc(name)}</h1><p class="sub">${bkLong(d)}</p></div>`;
-  if (role() === "DRIVER") html += await homeDriver();
-  else html += await homeFleet();
-  main().innerHTML = `<div class="dash">${html}</div>`;
+  let html;
+  if (role() === "DRIVER") html = await homeDriver();
+  else html = `<div class="z-head"><h1 class="hello">สวัสดี ${esc(name)}</h1><p class="sub">${bkLong(d)}</p></div>` + await homeFleet();
+  main().innerHTML = `<div class="dash${role() === "DRIVER" ? " dh" : ""}">${html}</div>`;
   bindHome();
+}
+/* ---- Driver home (MRTA-UI-DRIVER-HOME-V1.1): profile hero · score/praise · my bus today · actions · main menu ---- */
+const DI = {
+  id: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="11" r="2"/><path d="M5.5 16c.6-1.6 1.7-2.4 3-2.4s2.4.8 3 2.4M14 10h4.5M14 13.5h3"/>',
+  user: '<circle cx="12" cy="8" r="3.6"/><path d="M5 20c1-3.4 3.7-5.2 7-5.2s6 1.8 7 5.2"/>',
+  phone: '<path d="M6.6 3.5h2.6l1.4 4-2 1.3a11 11 0 0 0 6.6 6.6l1.3-2 4 1.4v2.6a2 2 0 0 1-2.2 2A16.4 16.4 0 0 1 4.6 5.7a2 2 0 0 1 2-2.2z"/>',
+  pin: '<path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  route: '<circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="6" r="2.4"/><path d="M8 16.5 16 7.5"/>',
+  shield: '<path d="M12 3.5 5 6v5.5c0 4.4 3 7.8 7 9 4-1.2 7-4.6 7-9V6z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
+  swap: '<path d="M4 9h14l-3.5-3.5M20 15H6l3.5 3.5"/>',
+  clip: '<path d="M9 4h6v3H9z"/><rect x="5" y="5.5" width="14" height="15" rx="2"/><path d="M8.5 13l2.3 2.3L15.5 10.5"/>',
+  chev: '<path d="m9 5 7 7-7 7"/>',
+  bus: '<rect x="4.5" y="4" width="15" height="13" rx="2.5"/><path d="M4.5 11h15M7.5 20v-3M16.5 20v-3"/>',
+  map: '<path d="M12 21s-5.5-5-5.5-9.5a5.5 5.5 0 0 1 11 0C17.5 16 12 21 12 21z"/><circle cx="12" cy="11.5" r="2"/><path d="M4 20.5h16"/>',
+  doc: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M9.5 12h5M9.5 15.5h5M9.5 8.5h2"/>',
+};
+const dic = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${DI[k]}</svg>`;
+const DMENU = () => [
+  ["#inspect", ACT_IC.inspect, "ตรวจสภาพรถ", "ก่อนออกเดินรถ"],
+  ["#charge", ACT_IC.charge, "บันทึกการชาร์จ", "พลังงานรถ EV"],
+  ["#maint", ACT_IC.maint, "ซ่อมบำรุง", "แจ้งปัญหารถ"],
+  ["#maint/accident", ACT_IC.accident, "แจ้งอุบัติเหตุ", "เหตุการณ์ความปลอดภัย"],
+  ["#schedule", ACT_IC.schedule, "ตารางงาน", "รอบการเดินรถ"],
+  ["#pdf", DI.doc, "รายงาน", "สรุปผลการปฏิบัติงาน"],
+  ["#vehicle", ACT_IC.vehicle, "ข้อมูลรถ", "ข้อมูลประจำรถ"],
+  ["#ai", null, "Smart AI ผู้ช่วย", "สอบถามข้อมูล / คู่มือ"],
+];
+const dTile = ([href, icon, t, sub]) => `<a class="dm" href="${href}">${icon ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>` : `<img src="assets/img/smartai-96.png?v=2" alt="">`}<b>${t}</b><small>${sub}</small></a>`;
+async function heroCard() {
+  const P = window.myProfileData ? await window.myProfileData().catch(() => null) : null;
+  const e = P?.e, p = P?.p, name = e?.full_name || ME.employee?.name || PROFILE.display_name;
+  const hv = e?.home_vehicle_id ? vById(e.home_vehicle_id) : null, wait = `<span class="sm">รอข้อมูล</span>`;
+  const row = (k, l, v) => `<div class="hr"><span class="hk">${dic(k)}${l}</span><span class="hv">${v}</span></div>`;
+  return `<a class="hero" href="#account" aria-label="ข้อมูลของฉัน">
+    <span class="hero-ph">${P?.url ? `<img src="${P.url}" alt="">` : `<span class="pf-ini">${esc(String(name).trim().slice(0, 1))}</span>`}</span>
+    <span class="hero-tx"><b class="hero-nm">${esc(name)}</b>
+      <span class="hero-sub">${esc(P?.kindTh || "พนักงานขับรถ")}${hv ? ` · รถประจำ <b>${hv.code}</b>` : ""}</span></span>
+      <span class="hero-kv">${row("id", "รหัสพนักงาน", e?.emp_no ? `<span class="num">${esc(e.emp_no)}</span>` : wait)}${row("user", "อายุ", P?.age != null ? `${P.age} ปี` : wait)}${row("phone", "เบอร์ติดต่อ", p?.phone ? `<u class="num">${esc(p.phone)}</u>` : wait)}${row("pin", "ที่อยู่", p?.address ? esc(p.address) : wait)}</span>
+    <span class="hero-go">${dic("chev")}</span></a>
+    <p class="sub hero-date">${bkLong(ME.date)}</p>`;
 }
 async function homeDriver() {
   const vs = myVehicles();
-  const claims = await q(sb.from("cover_claims").select("*").eq("work_date", ME.date));
-  let h = window.alertsCard ? await window.alertsCard() : "";
+  const [claims, hero, score] = await Promise.all([q(sb.from("cover_claims").select("*").eq("work_date", ME.date)), heroCard(), window.lastWorkScore ? window.lastWorkScore().catch(() => null) : null]);
+  let h = window.dayScoreCard ? await window.dayScoreCard(score) : "";
+  h += window.alertsCard ? await window.alertsCard({ exclude: score?.date }) : "";
   h += window.shiftCard ? await window.shiftCard() : "";
   const pend = claims.filter((c) => c.status === "pending" && c.relief_employee_id === ME.employee?.id);
   if (pend.length) h += `<p class="notice" style="margin-top:12px">${pend[0].kind === "switch" ? `เปลี่ยนรถเป็น ${vById(pend[0].vehicle_id)?.code || ""} แล้ว` : "รับรถแทนแล้ว"} รอผู้จัดการอนุมัติ ใช้รถได้ตามปกติ</p>`;
   const absent = claims.find((c) => c.absent_employee_id === ME.employee?.id && c.status !== "rejected");
   if (absent) h += absent.kind === "switch" ? `<p class="notice" style="margin-top:12px">วันนี้มีการสลับรถกับคุณ (${esc(absent.reason)}) · คุณขับ <b>${vById(absent.from_vehicle_id)?.code || "รถคันใหม่"}</b> แทน ${vById(absent.vehicle_id)?.code || ""} ${absent.status === "pending" ? "· รออนุมัติ" : ""}</p>`
     : `<p class="notice" style="margin-top:12px">วันนี้มีผู้รับรถแทนคุณแล้ว (${esc(absent.reason)}) ${absent.status === "pending" ? "รออนุมัติ" : "อนุมัติแล้ว"}</p>`;
-  h = `<div class="z-side">${h}</div><div class="z-main">`; let menu = "";
+  h = `<div class="z-head">${hero}</div><div class="z-side">${h}</div><div class="z-main">`;
   if (vs.length) {
     const ids = vs.map((v) => v.id);
-    const [queue, insp] = await Promise.all([
+    const [queue, insp, jobs] = await Promise.all([
       q(sb.from("vehicle_queue").select("*").eq("work_date", ME.date).in("vehicle_id", ids)),
-      q(sb.from("inspections").select("vehicle_id,result,inspected_at").in("vehicle_id", ids).gte("inspected_at", ME.date + "T00:00:00+07:00")),
+      q(sb.from("inspections").select("vehicle_id,result,inspected_at").in("vehicle_id", ids).gte("inspected_at", ME.date + "T00:00:00+07:00").order("inspected_at", { ascending: false })),
+      q(sb.from("maintenance_jobs").select("vehicle_id,status,vehicle_stopped").in("vehicle_id", ids).lt("status", 2)).catch(() => []),
     ]);
-    h += `<h2>รถของคุณวันนี้</h2><div class="list">` + vs.map((v) => {
-      const qq = queue.find((x) => x.vehicle_id === v.id), ins = insp.find((x) => x.vehicle_id === v.id);
-      return `<article class="bus" style="--c:${COLOR[v.code]}"><img src="${busImg(v.code)}" alt="${v.code}"><div class="b">
-        <div class="row1"><b>${v.code}</b><span class="plate num">${v.plate}</span>${ins ? `<span class="pill ${ins.result === "normal" ? "ok" : "bad"}">${ins.result === "normal" ? "ตรวจแล้ว ปกติ" : "ตรวจแล้ว ไม่ปกติ"}</span>` : `<span class="pill warn">ยังไม่ตรวจรถ</span>`}</div>
-        <div class="sm">${ROUTE[v.route_code] || ""}</div>
-        <div class="sm num">${qq ? `รอบแรก <b>${String(qq.first_time).slice(0, 5)}</b> จาก${esc(qq.first_origin)} · แผน <b>${qq.queue_code === "R2" ? "2 รอบ" : qq.planned_trips + " เที่ยว"}</b>` : "ยังไม่มีคิววันนี้"}</div>
-      </div></article>`;
-    }).join("") + `</div>`;
-    h += `<a class="btn block pri" href="#trip" style="margin-top:12px;min-height:52px">📷 รายงานรอบเดินรถ (สแตนด์บายรับออก)</a>`;
-    if (ME.schedule?.status === "work" && !claims.some((c) => c.relief_employee_id === ME.employee?.id && c.status !== "rejected")) h += `<button class="btn block" id="swBtn" style="margin-top:8px">🔁 เปลี่ยนรถวันนี้ (รถเสีย / สลับกับเพื่อน / ผู้จัดการสั่ง)</button>`;
-    menu = `<h2>เมนู</h2><div class="actions">${ACT.trip}${ACT.inspect}${ACT.charge}${ACT.maint}${ACT.accident}${ACT.schedule}${ACT.vehicle}${ACT.ai}</div>`;
+    const canSwitch = ME.schedule?.status === "work" && !claims.some((c) => c.relief_employee_id === ME.employee?.id && c.status !== "rejected");
+    h += `<section class="card mybus-wrap"><h2 class="mb-h">${dic("bus")}รถของฉันวันนี้</h2>` + vs.map((v) => {
+      const qq = queue.find((x) => x.vehicle_id === v.id), ins = insp.find((x) => x.vehicle_id === v.id), stop = jobs.some((j) => j.vehicle_id === v.id && j.vehicle_stopped);
+      // status from live data only: stopped for repair > abnormal inspection > not inspected yet > ready
+      const st = stop ? ["หยุดซ่อม", "bad"] : !ins ? ["รอตรวจสภาพรถ", "warn"] : ins.result !== "normal" ? ["ตรวจพบไม่ปกติ", "bad"] : ["พร้อมให้บริการ", "ok"];
+      return `<article class="mybus" style="--c:${COLOR[v.code]}">
+        <img class="mb-img" src="${busImg(v.code)}" alt="${v.code}">
+        <div class="mb-info"><div class="mb-top"><b class="mb-code">${v.code}</b><span class="mb-plate num">${esc(v.plate || "")}</span>
+          ${ins ? `<span class="mb-ins ${ins.result === "normal" ? "ok" : "bad"}">${ins.result === "normal" ? "✓ ตรวจแล้ว ปกติ" : "! ตรวจแล้ว ไม่ปกติ"}</span>` : `<span class="mb-ins warn">ยังไม่ตรวจรถ</span>`}</div>
+          <div class="mb-route">${ROUTE[v.route_code] || ""}</div></div>
+        <div class="mb-stats">
+          <div><span>${dic("clock")}รอบแรก</span><b class="num">${qq ? String(qq.first_time).slice(0, 5) : "–"}</b><small>${qq ? "จาก" + esc(qq.first_origin) : "ยังไม่มีคิววันนี้"}</small></div>
+          <div><span>${dic("route")}แผนการเดินรถ</span><b class="num">${qq ? (qq.queue_code === "R2" ? "2 รอบ" : qq.planned_trips + " เที่ยว") : "–"}</b><small>วันนี้</small></div>
+          <div><span>${dic("shield")}สถานะรถ</span><b class="st ${st[1]}">${st[0]}</b></div>
+        </div></article>`;
+    }).join("") + `<div class="mb-acts${canSwitch ? "" : " one"}">
+        <a class="mb-btn pri" href="#trip"><span class="mb-ic">${dic("clip")}</span><span><b>รายงานรอบเดินรถ</b><small>สแตนด์บายรับออก</small></span>${dic("chev")}</a>
+        ${canSwitch ? `<button class="mb-btn" id="swBtn"><span class="mb-ic">${dic("swap")}</span><span><b>เปลี่ยนรถวันนี้</b><small>รถเสีย / สลับกับเพื่อน / ผู้จัดการสั่ง</small></span>${dic("chev")}</button>` : ""}
+      </div></section>`;
   } else {
     const st = ME.schedule?.status;
     h += `<h2>วันนี้</h2><div class="empty"><b>${st === "off" ? "วันหยุดของคุณ" : st === "leave" ? "วันลา" : st === "standby" ? "วันนี้คุณเป็นคนขับสำรอง" : "วันนี้ยังไม่มีรถที่ได้รับมอบหมาย"}</b>${st === "standby" ? "พร้อมรับรถแทนเมื่อมีคนขับลาหรือขาด" : "ดูตารางงานของคุณได้ที่เมนูตารางงาน"}</div>`;
@@ -299,9 +358,25 @@ async function homeDriver() {
       const cl = await q(sb.rpc("claimable_today"));
       h += `<h2>รับรถแทน <small>รถที่คนขับประจำยังไม่เริ่มงาน</small></h2>` + (cl.length ? `<div class="list">${cl.map((c) => `<article class="bus" style="--c:${COLOR[c.code]}"><img src="${busImg(c.code)}" alt=""><div class="b"><div class="row1"><b>${c.code}</b><span class="plate num">${c.plate}</span></div><div class="sm">คนขับตามตาราง <b>${esc(c.driver_name || "ไม่มี")}</b></div><button class="btn" data-claim="${c.vehicle_id}" data-absent="${c.driver_id || ""}" data-name="${esc(c.driver_name || "")}" data-code="${c.code}">รับรถแทน</button></div></article>`).join("")}</div>` : `<div class="empty">ไม่มีรถที่ต้องรับแทนตอนนี้</div>`);
     }
-    menu = `<h2>เมนู</h2><div class="actions">${ACT.schedule}${ACT.maint}${ACT.ai}${ACT.account}</div>`;
   }
-  return h + `</div><div class="z-menu">${menu}</div>`;
+  return h + `</div><div class="z-menu"><h2>เมนูหลัก</h2><div class="dmenu">${DMENU().map(dTile).join("")}</div></div>`;
+}
+/* แจ้งเตือน (drivers / technicians): last work-day score + open alerts */
+async function alerts() {
+  const sc = window.lastWorkScore ? await window.lastWorkScore().catch(() => null) : null;
+  const a = (window.dayScoreCard ? await window.dayScoreCard(sc) : "") + (window.alertsCard ? await window.alertsCard({ exclude: sc?.date }) : "");
+  main().innerHTML = a || `<div class="empty" style="margin-top:16px"><b>ไม่มีการแจ้งเตือน</b>Manager Agent ตรวจทุกวันเวลา 08:00 · 12:00 · 16:00 · 20:45 น.</div>`;
+  setBell();
+}
+async function setBell() {
+  const b = $("bell"); if (!b) return;
+  if (!["DRIVER", "MAINTENANCE"].includes(PROFILE.role) || !ME.employee?.id) { b.hidden = true; return; }
+  b.hidden = false;
+  const since = iso(new Date(dObj(today()).getTime() - 2 * 864e5));
+  const { count } = await sb.from("compliance_alerts").select("id", { count: "exact", head: true }).eq("employee_id", ME.employee.id).is("resolved_at", null).is("ack_at", null).gte("work_date", since);
+  const n = count || 0;
+  b.classList.toggle("dot", n > 0); b.setAttribute("aria-label", n ? `แจ้งเตือน ${n} เรื่องที่ยังไม่รับทราบ` : "แจ้งเตือน");
+  document.querySelectorAll('#nav a[data-k="alerts"]').forEach((a) => a.classList.toggle("dot", n > 0));
 }
 async function homeFleet() {
   const d = ME.date;
@@ -368,6 +443,14 @@ async function nextPeriodCard() {
     <p class="sm" style="margin:4px 0 8px">${periodSpan(nxt)} · ต้องเสร็จก่อน <b>${bk(dlIso)}</b> เพื่อใช้ตั้งแต่ ${bk(a)} · ตอบคำถามต่อไปนี้ก่อนจัดตาราง</p>
     <ol class="sm" style="margin:0;padding-left:20px;display:grid;gap:6px">${qs.map((x) => `<li>${x}</li>`).join("")}</ol></section>`;
 }
+const ACT_IC = {
+  inspect: '<path d="M9 4h6v3H9z"/><rect x="5" y="5.5" width="14" height="15" rx="2"/><path d="M8.5 13l2.3 2.3L15.5 10.5"/>',
+  charge: '<rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 10.5v3"/><path d="M11.5 8.5 9 12.5h3.5L10 15.5"/>',
+  maint: '<path d="M14.5 6.5a4 4 0 0 0-5.3 5.3L4 17l3 3 5.2-5.2a4 4 0 0 0 5.3-5.3l-2.4 2.4-2.6-.4-.4-2.6z"/>',
+  accident: '<path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4.5M12 17v.5"/>',
+  schedule: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  vehicle: '<rect x="4.5" y="4" width="15" height="13" rx="2.5"/><path d="M4.5 11h15M7.5 20v-3M16.5 20v-3"/>',
+};
 const ic = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">${p}</svg>`;
 const ACT = {
   drivers: `<a class="act" href="#drivers">${ic('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.9-3 3-4.6 5.5-4.6s4.6 1.6 5.5 4.6"/><path d="M15 6.5h5M15 10h5M16.5 13.5h3.5"/>')}ข้อมูลคนขับ</a>`,
@@ -420,6 +503,7 @@ function switchSheet() {
   }).catch((e) => { s.querySelector(".in").innerHTML = `<p class="err">${/switchable_today|function/.test(errMsg(e)) ? "ระบบเปลี่ยนรถยังไม่เปิดใช้ (รอรัน SQL)" : esc(errMsg(e))}</p>`; });
 }
 function bindHome() {
+  setBell();
   if ($("swBtn")) $("swBtn").onclick = switchSheet;
   main().querySelectorAll("[data-pa]").forEach((b) => (b.onclick = async () => { b.disabled = true;
     try { await q(sb.from("work_schedules").update({ approval: "approved", note: "ศิริราชแทน (ผู้จัดการมอบหมาย)", updated_at: new Date().toISOString() }).eq("id", b.dataset.pa)); toast("ยืนยันแล้ว"); home(); } catch (e) { b.disabled = false; toast(errMsg(e)); } }));

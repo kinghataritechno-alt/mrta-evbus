@@ -80,6 +80,15 @@
     };
   }
 
+  /* driver home hero: own employee row + profile + signed photo URL (profile part empty until the SQL is run) */
+  window.myProfileData = async function () {
+    if (!ME.employee?.id) return null;
+    const [e, pr] = await Promise.all([q(sb.from("employees").select("*").eq("id", ME.employee.id).single()).catch(() => null), sb.from("employee_profiles").select("*").eq("employee_id", ME.employee.id)]);
+    if (!e) return null;
+    const p = (!pr.error && (pr.data || [])[0]) || null, urls = p?.photo_path ? await photos([p.photo_path]).catch(() => ({})) : {};
+    return { e, p, url: urls[p?.photo_path] || null, age: ageNow(p), kindTh: KTH[e.kind] || "" };
+  };
+
   /* own profile (account page) — read only */
   window.myProfileCard = async function () {
     if (!ME.employee?.id) return "";

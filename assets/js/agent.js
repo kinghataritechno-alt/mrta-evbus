@@ -16,12 +16,13 @@
   const sortA = (a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity] || a.kind.localeCompare(b.kind);
 
   /* ---------- พนักงาน: แถบแจ้งเตือนในหน้าหลัก ---------- */
-  window.alertsCard = async function () {
+  window.alertsCard = async function (opt) {
     const emp = ME && ME.employee && ME.employee.id;
     if (!emp) return "";
     const since = iso(new Date(dObj(today()).getTime() - 2 * 864e5));
-    const { data, error } = await sb.from("compliance_alerts").select("*").eq("employee_id", emp).is("resolved_at", null).gte("work_date", since).order("work_date", { ascending: false });
-    if (error || !data || !data.length) return "";
+    const { data: all, error } = await sb.from("compliance_alerts").select("*").eq("employee_id", emp).is("resolved_at", null).gte("work_date", since).order("work_date", { ascending: false });
+    const data = (all || []).filter((a) => !(opt && opt.exclude && a.work_date === opt.exclude)); // that day is shown in the score card
+    if (error || !data.length) return "";
     const open = data.filter((a) => !a.ack_at).length;
     return `<section class="card agentcard" style="margin-top:12px;border-color:${open ? "#ff8a8a" : "#ffd166"}">
       <div class="row1"><b><img class="tf-ic" src="assets/img/smartai-96.png?v=2" alt="">Manager Agent แจ้งเตือน</b><span class="pill ${open ? "bad" : "warn"}">${data.length} เรื่อง</span></div>
@@ -33,6 +34,45 @@
       }).join("")}</div>
       ${data.some((a) => a.work_date !== today()) ? `<p class="sm" style="margin:8px 0 0">เรื่องของวันก่อนหน้าแก้ย้อนหลังเองไม่ได้ แจ้งผู้จัดการเพื่อแก้ไขข้อมูล</p>` : ""}</section>`;
   };
+  /* ---------- พนักงาน: ผลคะแนนของวันทำงานล่าสุด (ก่อนวันนี้) ----------
+     100 คะแนน = คำชมเชยจากผู้บริหาร · ต่ำกว่า 100 = คำเตือนตามที่ Manager Agent ตรวจพบ
+     คะแนนคิดแบบเดียวกับหน้าผู้จัดการ: 100 − (สำคัญ 20 / ควรแก้ 10 / แนะนำ 5) ของเรื่องที่ยังไม่แก้ */
+  const PRAISE = "ผมขอขอบคุณในความตั้งใจทำหน้าที่ในวันที่ผ่านมาโดยสมบูรณ์ และขอให้ทำตัวเป็นแบบอย่างเช่นนี้ตลอดไป";
+  const AGENT_START = "2026-10-26"; // first day the checker ran
+  window.lastWorkScore = async function () {
+    const emp = ME && ME.employee && ME.employee.id; if (!emp) return null;
+    const t = today();
+    const [ws, cc] = await Promise.all([
+      sb.from("work_schedules").select("work_date").eq("employee_id", emp).eq("status", "work").lt("work_date", t).gte("work_date", AGENT_START).order("work_date", { ascending: false }).limit(10),
+      sb.from("cover_claims").select("work_date,kind,relief_employee_id,absent_employee_id,status").or(`relief_employee_id.eq.${emp},absent_employee_id.eq.${emp}`).lt("work_date", t).gte("work_date", AGENT_START).in("status", ["pending", "approved"]),
+    ]);
+    if (ws.error || cc.error) return null;
+    const cl = cc.data || [];
+    const coveredAway = (d) => cl.some((c) => c.work_date === d && c.absent_employee_id === emp && (c.kind || "cover") === "cover");
+    const days = [...new Set([...(ws.data || []).map((r) => r.work_date).filter((d) => !coveredAway(d)), ...cl.filter((c) => c.relief_employee_id === emp).map((c) => c.work_date)])].filter(Boolean).sort().reverse();
+    const d = days[0]; if (!d) return null;
+    const { data, error } = await sb.from("compliance_alerts").select("*").eq("employee_id", emp).eq("work_date", d).is("resolved_at", null);
+    if (error) return null;
+    const list = (data || []).sort(sortA);
+    return { date: d, list, score: Math.max(0, 100 - list.reduce((s, a) => s + (SEV[a.severity] || SEV.low)[2], 0)) };
+  };
+  window.dayScoreCard = async function (r) {
+    r = r === undefined ? await window.lastWorkScore() : r; if (!r) return "";
+    const when = `วัน${DOWL[dObj(r.date).getDay()]}ที่ ${bk(r.date)}`;
+    if (r.score === 100) return `<section class="card praise">
+      <div class="row1"><b><span class="praise-ic" aria-hidden="true">🏆</span>คำชมเชยจากผู้บริหาร</b><span class="pill ok num">100 คะแนน</span></div>
+      <p class="sm" style="margin:2px 0 0">ผลตรวจของ Manager Agent ${when} · บันทึกครบทุกขั้นตอน</p>
+      <blockquote>“${PRAISE}”</blockquote>
+      <p class="sm praise-by">— ผู้บริหาร SMART TERMINAL</p></section>`;
+    return `<section class="card warnc">
+      <div class="row1"><b><img class="tf-ic" src="assets/img/smartai-96.png?v=2" alt="">ผลตรวจการปฏิบัติงาน</b><span class="pill ${r.score >= 70 ? "warn" : "bad"} num">${r.score} คะแนน</span></div>
+      <p class="sm" style="margin:4px 0 8px">Manager Agent ตรวจพบว่า${when} ยังทำไม่ครบตามขั้นตอน <b>${r.list.length} เรื่อง</b> · ขอให้ทำให้ครบในวันนี้ เพื่อให้ได้ 100 คะแนน</p>
+      <div class="list">${r.list.map((a) => { const k = KIND[a.kind] || [a.kind, "#home"], s = SEV[a.severity] || SEV.low;
+        return `<div class="alrow"><span><span class="pill ${s[1]}">${s[0]}</span> <b>${esc(k[0])}</b>${a.vehicle_id ? ` · ${vcodeOf(a.vehicle_id)}` : ""}<br><span class="sm">${esc(a.detail)}</span></span>
+          ${a.ack_at ? `<span class="sm">✔ รับทราบ ${tHM(a.ack_at)}</span>` : `<button class="btn" data-ack="${a.id}">รับทราบ</button>`}</div>`; }).join("")}</div>
+      <p class="sm" style="margin:8px 0 0">เรื่องของวันก่อนหน้าแก้ย้อนหลังเองไม่ได้ หากบันทึกไว้แล้วแต่ระบบยังเตือน ให้แจ้งผู้จัดการ</p></section>`;
+  };
+
   document.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-ack]"); if (!b) return;
     b.disabled = true;
