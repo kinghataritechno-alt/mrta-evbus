@@ -163,6 +163,7 @@ const SVG = {
   vehicle: '<rect x="4.5" y="4" width="15" height="13" rx="2.5"/><path d="M4.5 11h15M7.5 20v-3M16.5 20v-3"/>',
   report: '<path d="M4 19h16"/><path d="M6 15l4-5 3 3 5-7"/>',
   tripreport: '<path d="M4 19h16"/><rect x="6" y="11" width="3" height="6"/><rect x="11" y="7" width="3" height="10"/><rect x="16" y="13" width="3" height="4"/>',
+  drivers: '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.9-3 3-4.6 5.5-4.6s4.6 1.6 5.5 4.6"/><path d="M15 6.5h5M15 10h5M16.5 13.5h3.5"/>',
   account: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20c1.2-3.6 4-5.4 7.5-5.4s6.3 1.8 7.5 5.4"/>',
 };
 function sideItems() {
@@ -170,7 +171,7 @@ function sideItems() {
   const g = [
     ["ภาพรวม", [["home", "หน้าหลัก"], mgr && ["agent", "Manager Agent", robot], mgr && ["report", "รายงานการชาร์จไฟฟ้า"], (mgr || cust) && ["tripreport", "รายงานรอบเดินรถ"]]],
     ["งานประจำวัน", [["trip", "รอบเดินรถ"], !cust && ["inspect", "ตรวจสภาพรถ"], !cust && ["charge", "บันทึกการชาร์จ"], !cust && ["maint", "ซ่อมบำรุง"], !cust && !mgr && ["maint/accident", "แจ้งอุบัติเหตุ", SVG.accident]]],
-    ["ข้อมูล", [["schedule", "ตารางงาน"], !cust && ["pdf", "ตารางงาน (PDF)"], ["vehicle", "ข้อมูลรถ"]]],
+    ["ข้อมูล", [mgr && ["drivers", "ข้อมูลคนขับ"], ["schedule", "ตารางงาน"], !cust && ["pdf", "ตารางงาน (PDF)"], ["vehicle", "ข้อมูลรถ"]]],
     ["ช่วยเหลือ", [!cust && ["ai", "Smart AI ผู้ช่วย", robot], ["account", "บัญชีผู้ใช้"]]],
   ];
   return g.map(([h, xs]) => [h, xs.filter(Boolean)]).filter(([, xs]) => xs.length);
@@ -181,7 +182,7 @@ function drawSide() {
     <nav aria-label="เมนูทั้งหมด">${sideItems().map(([h, xs]) => `<p class="sgrp">${h}</p>` + xs.map(([k, l, ico]) => `<a href="#${k}" data-k="${k.split("/")[0]}"${k.includes("/") ? ` data-sub="${k}"` : ""} title="${l}">${ico && ico.startsWith("<img") ? ico : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${ico || SVG[k] || ""}</svg>`}<span>${l}</span></a>`).join("")).join("")}</nav>
     <div class="sme"><b>${esc(PROFILE.display_name || PROFILE.username)}</b><span>${ROLE_TH[PROFILE.role] || ""}</span></div>`;
 }
-const PAGES = { home, schedule, inspect, charge, maint, vehicle, report, account, password, trip: () => window.tripPage(), tripstops: () => window.tripStops(), tripreport: () => window.tripReport(), ai: () => (window.aiPage ? window.aiPage() : Promise.reject(new Error("โหลด Smart AI ไม่สำเร็จ ลองเปิดแอพใหม่"))), agent: () => (window.agentPage ? window.agentPage() : Promise.reject(new Error("โหลดหน้า Manager Agent ไม่สำเร็จ ลองเปิดแอพใหม่"))), pdf: () => (window.pdfPage ? window.pdfPage() : Promise.reject(new Error("โหลดหน้าเอกสารไม่สำเร็จ ลองเปิดแอพใหม่"))) };
+const PAGES = { home, schedule, inspect, charge, maint, vehicle, report, account, password, trip: () => window.tripPage(), tripstops: () => window.tripStops(), tripreport: () => window.tripReport(), drivers: () => (window.driversPage ? window.driversPage() : Promise.reject(new Error("โหลดหน้าข้อมูลคนขับไม่สำเร็จ ลองเปิดแอพใหม่"))), ai: () => (window.aiPage ? window.aiPage() : Promise.reject(new Error("โหลด Smart AI ไม่สำเร็จ ลองเปิดแอพใหม่"))), agent: () => (window.agentPage ? window.agentPage() : Promise.reject(new Error("โหลดหน้า Manager Agent ไม่สำเร็จ ลองเปิดแอพใหม่"))), pdf: () => (window.pdfPage ? window.pdfPage() : Promise.reject(new Error("โหลดหน้าเอกสารไม่สำเร็จ ลองเปิดแอพใหม่"))) };
 const STALE = "\u2063stale";
 function route() {
   $("sheet").hidden = true; $("viewer").hidden = true; // never leave a sheet over a different page
@@ -197,11 +198,11 @@ function route() {
   if (fixedPw && k === "password") k = "account";
   if (!fixedPw && PROFILE.must_change_password && k !== "password") k = "password";
   if (!PAGES[k]) k = "home";
-  if ((k === "report" || k === "agent") && !isMgr()) k = "home";
+  if ((k === "report" || k === "agent" || k === "drivers") && !isMgr()) k = "home";
   document.querySelectorAll("#nav a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.k === k) || a.setAttribute("aria-current", a.dataset.k === k ? "page" : "false"));
   document.querySelectorAll("#nav a, #side a").forEach((a) => { const on = a.dataset.sub ? raw === a.dataset.sub : a.dataset.k === k && !(k === "maint" && raw.includes("accident") && a.closest("#side") && document.querySelector('#side a[data-sub="maint/accident"]')); if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
   main().dataset.page = k;
-  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", agent: "Manager Agent", ai: "Smart AI ผู้ช่วย", pdf: "ตารางงาน (PDF)", trip: "รายงานรอบเดินรถ", tripstops: "บันทึกผู้โดยสาร", tripreport: "รายงานรอบเดินรถประจำเดือน", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
+  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", agent: "Manager Agent", ai: "Smart AI ผู้ช่วย", drivers: "ข้อมูลคนขับ", pdf: "ตารางงาน (PDF)", trip: "รายงานรอบเดินรถ", tripstops: "บันทึกผู้โดยสาร", tripreport: "รายงานรอบเดินรถประจำเดือน", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
   scrollTo(0, 0);
   loading();
   PAGES[k]().catch((e) => { if (my === route.seq && !(e && e.message === STALE)) main().innerHTML = `<p class="err">${esc(errMsg(e))}</p>`; });
@@ -269,9 +270,10 @@ async function homeDriver() {
   let h = window.alertsCard ? await window.alertsCard() : "";
   h += window.shiftCard ? await window.shiftCard() : "";
   const pend = claims.filter((c) => c.status === "pending" && c.relief_employee_id === ME.employee?.id);
-  if (pend.length) h += `<p class="notice" style="margin-top:12px">รับรถแทนแล้ว รอผู้จัดการอนุมัติ ใช้รถได้ตามปกติ</p>`;
+  if (pend.length) h += `<p class="notice" style="margin-top:12px">${pend[0].kind === "switch" ? `เปลี่ยนรถเป็น ${vById(pend[0].vehicle_id)?.code || ""} แล้ว` : "รับรถแทนแล้ว"} รอผู้จัดการอนุมัติ ใช้รถได้ตามปกติ</p>`;
   const absent = claims.find((c) => c.absent_employee_id === ME.employee?.id && c.status !== "rejected");
-  if (absent) h += `<p class="notice" style="margin-top:12px">วันนี้มีผู้รับรถแทนคุณแล้ว (${esc(absent.reason)}) ${absent.status === "pending" ? "รออนุมัติ" : "อนุมัติแล้ว"}</p>`;
+  if (absent) h += absent.kind === "switch" ? `<p class="notice" style="margin-top:12px">วันนี้มีการสลับรถกับคุณ (${esc(absent.reason)}) · คุณขับ <b>${vById(absent.from_vehicle_id)?.code || "รถคันใหม่"}</b> แทน ${vById(absent.vehicle_id)?.code || ""} ${absent.status === "pending" ? "· รออนุมัติ" : ""}</p>`
+    : `<p class="notice" style="margin-top:12px">วันนี้มีผู้รับรถแทนคุณแล้ว (${esc(absent.reason)}) ${absent.status === "pending" ? "รออนุมัติ" : "อนุมัติแล้ว"}</p>`;
   h = `<div class="z-side">${h}</div><div class="z-main">`; let menu = "";
   if (vs.length) {
     const ids = vs.map((v) => v.id);
@@ -288,6 +290,7 @@ async function homeDriver() {
       </div></article>`;
     }).join("") + `</div>`;
     h += `<a class="btn block pri" href="#trip" style="margin-top:12px;min-height:52px">📷 รายงานรอบเดินรถ (สแตนด์บายรับออก)</a>`;
+    if (ME.schedule?.status === "work" && !claims.some((c) => c.relief_employee_id === ME.employee?.id && c.status !== "rejected")) h += `<button class="btn block" id="swBtn" style="margin-top:8px">🔁 เปลี่ยนรถวันนี้ (รถเสีย / สลับกับเพื่อน / ผู้จัดการสั่ง)</button>`;
     menu = `<h2>เมนู</h2><div class="actions">${ACT.trip}${ACT.inspect}${ACT.charge}${ACT.maint}${ACT.accident}${ACT.schedule}${ACT.vehicle}${ACT.ai}</div>`;
   } else {
     const st = ME.schedule?.status;
@@ -316,10 +319,11 @@ async function homeFleet() {
   if (claims.length) {
     const emp = await q(sb.from("employees").select("id,full_name"));
     const nm = (id) => emp.find((e) => e.id === id)?.full_name || "–";
-    h += `<h2>รออนุมัติรับรถแทน <small>${claims.length} รายการ</small></h2><div class="list">${claims.map((c) => `<div class="card"><div class="row1"><b>${vById(c.vehicle_id)?.code || ""}</b><span class="pill warn">รออนุมัติ</span></div>
-      <p class="sm" style="margin:4px 0 8px">${esc(nm(c.relief_employee_id))} รับรถแทน ${esc(nm(c.absent_employee_id))} · ${esc(c.reason)} · ${bk(c.work_date)} ${tHM(c.claimed_at)} น.</p>
+    h += `<h2>รออนุมัติรับรถแทน / เปลี่ยนรถ <small>${claims.length} รายการ</small></h2><div class="list">${claims.map((c) => `<div class="card"><div class="row1"><b>${vById(c.vehicle_id)?.code || ""}</b><span class="pill warn">รออนุมัติ</span></div>
+      <p class="sm" style="margin:4px 0 8px">${c.kind === "switch" ? `${esc(nm(c.relief_employee_id))} เปลี่ยนไปขับ ${vById(c.vehicle_id)?.code || ""}${c.absent_employee_id ? ` · ${esc(nm(c.absent_employee_id))} ได้ ${vById(c.from_vehicle_id)?.code || ""} แทน (สลับกัน)` : ""}` : `${esc(nm(c.relief_employee_id))} รับรถแทน ${esc(nm(c.absent_employee_id))}`} · ${esc(c.reason)} · ${bk(c.work_date)} ${tHM(c.claimed_at)} น.</p>
       <div class="acts"><button class="btn pri" data-decide="${c.id}" data-ok="1">อนุมัติ</button><button class="btn" data-decide="${c.id}" data-ok="0">ไม่อนุมัติ</button></div></div>`).join("")}</div>`;
   }
+  if (isMgr()) h += await pendingAssignCard();
   if (isMgr() && window.agentHomeCard) h += await window.agentHomeCard();
   if (role() === "MAINTENANCE" && window.alertsCard) h = (await window.alertsCard()) + h;
   h = `<div class="z-top">${top}</div><div class="z-side">${h}`;
@@ -333,7 +337,7 @@ async function homeFleet() {
       ${isMgr() ? `<div class="sm">คนขับ <b>${esc(w?.employees?.full_name || "ยังไม่จัด")}</b>${w?.note ? `<em class="sub2">${esc(w.note.includes("แทน") ? "ขับแทน" : w.note)}</em>` : ""}</div>` : ""}
       <div class="sm num">${qq ? `รอบแรก <b>${String(qq.first_time).slice(0, 5)}</b> · ${qq.queue_code === "R2" ? "2 รอบ" : qq.planned_trips + " เที่ยว"}` : "ไม่มีคิว"}</div></div></article>`;
   }).join("") + `</div></div>`;
-  h += `<div class="z-menu"><h2>เมนู</h2><div class="actions">${role() === "CUSTOMER" ? ACT.trip + ACT.schedule + ACT.vehicle : ACT.trip + ACT.inspect + ACT.charge + ACT.maint + ACT.schedule + ACT.vehicle + (isMgr() ? ACT.report + ACT.agent : ACT.accident)}</div></div>`;
+  h += `<div class="z-menu"><h2>เมนู</h2><div class="actions">${role() === "CUSTOMER" ? ACT.trip + ACT.schedule + ACT.vehicle : ACT.trip + ACT.inspect + ACT.charge + ACT.maint + ACT.schedule + ACT.vehicle + (isMgr() ? ACT.report + ACT.agent + ACT.drivers : ACT.accident)}</div></div>`;
   return h;
 }
 /* ---- Next-period schedule reminder (managers): schedule must be finished by the 23rd; it is used from the 26th ---- */
@@ -342,7 +346,8 @@ const HOLIDAYS = { "2026-12-05": "วันพ่อแห่งชาติ", "
 async function nextPeriodCard() {
   const cur = periodOf(today()), nxt = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
   const [a, b] = periodRange(nxt), dl = new Date(cur.getFullYear(), cur.getMonth(), 23), dlIso = iso(dl);
-  const { count } = await sb.from("work_schedules").select("id", { count: "exact", head: true }).gte("work_date", a).lte("work_date", b);
+  const { data: wd } = await sb.from("work_schedules").select("work_date").gte("work_date", a).lte("work_date", b);
+  const nDays = Math.round((dObj(b) - dObj(a)) / 864e5) + 1, have = new Set((wd || []).map((r) => r.work_date)).size, count = have >= nDays;
   if (count) return `<p class="notice ok" style="margin-top:12px">ตาราง${periodLabel(nxt)} (${periodSpan(nxt)}) สร้างแล้ว · <a href="#pdf">ดู PDF</a></p>`;
   const left = Math.round((dObj(dlIso) - dObj(today())) / 864e5);
   const emps = await q(sb.from("employees").select("full_name,kind,home_vehicle_id,weekly_day_off").eq("kind", "regular"));
@@ -359,12 +364,13 @@ async function nextPeriodCard() {
   qs.push(`ตรวจวันหยุดนักขัตฤกษ์ของรอบนี้กับประกาศทางราชการ (เพิ่ม/ยกเลิกวันหยุดพิเศษ)`);
   const urgent = left <= 3;
   return `<section class="card" style="margin-top:12px;border-color:${urgent ? "#ff8a8a" : "#ffd166"}">
-    <div class="row1"><b>ตาราง${periodLabel(nxt)} ยังไม่ได้สร้าง</b><span class="pill ${urgent ? "bad" : "warn"}">${left > 0 ? `เหลือ ${left} วัน` : left === 0 ? "ครบกำหนดวันนี้" : `เลยกำหนด ${-left} วัน`}</span></div>
+    <div class="row1"><b>ตาราง${periodLabel(nxt)} ${have ? `สร้างแล้ว ${have}/${nDays} วัน` : "ยังไม่ได้สร้าง"}</b><span class="pill ${urgent ? "bad" : "warn"}">${left > 0 ? `เหลือ ${left} วัน` : left === 0 ? "ครบกำหนดวันนี้" : `เลยกำหนด ${-left} วัน`}</span></div>
     <p class="sm" style="margin:4px 0 8px">${periodSpan(nxt)} · ต้องเสร็จก่อน <b>${bk(dlIso)}</b> เพื่อใช้ตั้งแต่ ${bk(a)} · ตอบคำถามต่อไปนี้ก่อนจัดตาราง</p>
     <ol class="sm" style="margin:0;padding-left:20px;display:grid;gap:6px">${qs.map((x) => `<li>${x}</li>`).join("")}</ol></section>`;
 }
 const ic = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">${p}</svg>`;
 const ACT = {
+  drivers: `<a class="act" href="#drivers">${ic('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.9-3 3-4.6 5.5-4.6s4.6 1.6 5.5 4.6"/><path d="M15 6.5h5M15 10h5M16.5 13.5h3.5"/>')}ข้อมูลคนขับ</a>`,
   ai: `<a class="act" href="#ai"><img src="assets/img/smartai-96.png?v=2" alt="" width="34" height="34" style="border-radius:50%">Smart AI ผู้ช่วย</a>`,
   agent: `<a class="act" href="#agent"><img src="assets/img/smartai-96.png?v=2" alt="" width="34" height="34" style="border-radius:50%">Manager Agent</a>`,
   trip: `<a class="act" href="#trip">${ic('<path d="M4 8.5h3l1.6-2.5h6.8L17 8.5h3v10H4z"/><circle cx="12" cy="13.2" r="3.4"/>')}รายงานรอบเดินรถ</a>`,
@@ -377,7 +383,47 @@ const ACT = {
   report: `<a class="act" href="#report">${ic('<path d="M4 19h16"/><path d="M6 15l4-5 3 3 5-7"/>')}รายงานการชาร์จ</a>`,
   account: `<a class="act" href="#account">${ic('<circle cx="12" cy="8" r="4"/><path d="M4.5 20c1.2-3.6 4-5.4 7.5-5.4s6.3 1.8 7.5 5.4"/>')}บัญชีผู้ใช้</a>`,
 };
+/* manager: schedule entries waiting for the manager to assign / confirm (e.g. weekend Siriraj cover) */
+async function pendingAssignCard() {
+  const end = iso(new Date(dObj(today()).getTime() + 21 * 864e5));
+  const rows = await q(sb.from("work_schedules").select("id,work_date,vehicle_id,note,employees(full_name)").eq("approval", "pending").gte("work_date", today()).lte("work_date", end).order("work_date")).catch(() => []);
+  if (!rows.length) return "";
+  return `<section class="card" style="margin-top:12px;border-color:#ffd166"><div class="row1"><b>รอผู้จัดการมอบหมายคนขับ</b><span class="pill warn">${rows.length} วัน</span></div>
+    <p class="sm" style="margin:4px 0 8px">ระบบใส่คนขับที่แนะนำไว้ให้ก่อน · กดยืนยัน หรือเปลี่ยนคนในตารางงาน</p>
+    <div class="list">${rows.map((r) => `<div class="alrow" style="display:flex;gap:8px;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:8px">
+      <span class="sm"><b>${bk(r.work_date)} (${DOW[dObj(r.work_date).getDay()]})</b> · ${vById(r.vehicle_id)?.code || ""} · แนะนำ <b>${esc(r.employees?.full_name || "–")}</b><br>${esc(r.note || "")}</span>
+      <span style="display:flex;gap:6px;flex:none"><button class="btn pri" data-pa="${r.id}">ยืนยัน</button><button class="btn" data-pchg="${r.work_date}">เปลี่ยนคน</button></span></div>`).join("")}</div></section>`;
+}
+function switchSheet() {
+  const REASONS = ["รถเสีย / ชาร์จไม่ทัน", "สลับกับเพื่อน", "ผู้จัดการสั่ง", "อื่น ๆ"];
+  let reason = REASONS[0], pick = null;
+  const s = $("sheet");
+  s.innerHTML = `<div class="in"><div class="sh"><b>เปลี่ยนรถวันนี้</b><button class="lnk" id="shX">ปิด</button></div><p class="loading"><span class="spin"></span>กำลังโหลด…</p></div>`; s.hidden = false;
+  $("shX").onclick = () => (s.hidden = true);
+  q(sb.rpc("switchable_today")).then((list) => {
+    s.innerHTML = `<div class="in"><div class="sh"><b>เปลี่ยนรถวันนี้</b><button class="lnk" id="shX">ปิด</button></div>
+      <p class="sm" style="margin:0">รถของคุณตามตาราง: <b>${myVehicles().map((v) => v.code).join(", ")}</b> · เลือกรถที่จะขับแทน</p>
+      ${list.length ? `<div class="list" id="swList">${list.map((c) => `<button class="day" data-sw="${c.vehicle_id}" style="text-align:left;cursor:pointer;border-left:4px solid ${COLOR[c.code]}"><div class="d"><b>${c.code}</b><small class="num">${c.plate}</small></div><div class="sm">${c.driver_name ? `คนขับตามตาราง <b>${esc(c.driver_name)}</b> · จะได้รถของคุณไปแทน (สลับกัน)` : "ยังไม่มีคนขับ"}${c.started ? `<em class="sub2">ตรวจรถแล้ววันนี้</em>` : ""}</div></button>`).join("")}</div>` : `<div class="empty">ไม่มีรถที่เปลี่ยนได้วันนี้</div>`}
+      <p class="lbl">เหตุผล</p><div class="chips" id="swR">${REASONS.map((r) => `<button class="chip" aria-pressed="${r === reason}" data-r="${r}">${r}</button>`).join("")}</div>
+      <div class="fld full"><label for="swNote">รายละเอียด (ถ้ามี)</label><input id="swNote" placeholder="เช่น ไฟเตือนแบตเตอรี่ขึ้น"></div>
+      <p class="notice">กดแล้วใช้รถคันใหม่ได้ทันที ระบบแจ้งผู้จัดการให้อนุมัติภายหลัง · ตรวจสภาพรถคันใหม่ก่อนออกรถ</p>
+      <button class="btn pri block" id="swOk" disabled>ยืนยันเปลี่ยนรถ</button></div>`;
+    $("shX").onclick = () => (s.hidden = true);
+    s.querySelectorAll("[data-sw]").forEach((b) => (b.onclick = () => { pick = b.dataset.sw; s.querySelectorAll("[data-sw]").forEach((x) => x.classList.toggle("today", x === b)); $("swOk").disabled = false; }));
+    $("swR").onclick = (e) => { const c = e.target.closest(".chip"); if (!c) return; reason = c.dataset.r; $("swR").querySelectorAll(".chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c))); };
+    $("swOk").onclick = async () => {
+      $("swOk").disabled = true;
+      try { const note = $("swNote").value.trim(); await q(sb.rpc("switch_vehicle", { p_vehicle: pick, p_reason: note ? `${reason}: ${note}` : reason }));
+        s.hidden = true; toast(`เปลี่ยนเป็น ${vById(pick)?.code || ""} แล้ว`); await refreshMe(); home(); }
+      catch (e) { toast(/switch_vehicle|function/.test(errMsg(e)) ? "ระบบเปลี่ยนรถยังไม่เปิดใช้ (รอรัน SQL)" : errMsg(e)); $("swOk").disabled = false; }
+    };
+  }).catch((e) => { s.querySelector(".in").innerHTML = `<p class="err">${/switchable_today|function/.test(errMsg(e)) ? "ระบบเปลี่ยนรถยังไม่เปิดใช้ (รอรัน SQL)" : esc(errMsg(e))}</p>`; });
+}
 function bindHome() {
+  if ($("swBtn")) $("swBtn").onclick = switchSheet;
+  main().querySelectorAll("[data-pa]").forEach((b) => (b.onclick = async () => { b.disabled = true;
+    try { await q(sb.from("work_schedules").update({ approval: "approved", note: "ศิริราชแทน (ผู้จัดการมอบหมาย)", updated_at: new Date().toISOString() }).eq("id", b.dataset.pa)); toast("ยืนยันแล้ว"); home(); } catch (e) { b.disabled = false; toast(errMsg(e)); } }));
+  main().querySelectorAll("[data-pchg]").forEach((b) => (b.onclick = () => { schedDay = b.dataset.pchg; location.hash = "#schedule"; }));
   if (window.bindShift) window.bindShift();
   if ($("liveChart") && window.liveTrips) window.liveTrips();
   main().querySelectorAll("[data-decide]").forEach((b) => (b.onclick = async () => {
@@ -467,7 +513,7 @@ function editSched(emp, row) {
   $("eSave").onclick = async () => {
     const st = $("eSt").value, vid = $("eV").value || null;
     if (st === "work" && !vid) { $("eErr").textContent = "สถานะทำงานต้องเลือกรถ"; $("eErr").hidden = false; return; }
-    const rec = { work_date: schedDay, employee_id: emp.id, status: st, vehicle_id: st === "work" ? vid : null, leave_type: st === "leave" ? $("eLt").value || null : null, first_time: st === "work" && $("eT").value ? $("eT").value : null, first_origin: st === "work" ? $("eO").value || null : null, note: $("eN").value.trim() || null, created_by: (await sb.auth.getUser()).data.user.id, updated_at: new Date().toISOString() };
+    const rec = { work_date: schedDay, employee_id: emp.id, status: st, vehicle_id: st === "work" ? vid : null, leave_type: st === "leave" ? $("eLt").value || null : null, first_time: st === "work" && $("eT").value ? $("eT").value : null, first_origin: st === "work" ? $("eO").value || null : null, note: $("eN").value.trim() || null, approval: "approved", created_by: (await sb.auth.getUser()).data.user.id, updated_at: new Date().toISOString() };
     try { await q(sb.from("work_schedules").upsert(rec, { onConflict: "work_date,employee_id" })); s.hidden = true; toast("บันทึกตารางแล้ว"); scheduleManager(); }
     catch (e) { $("eErr").textContent = /one_driver_per_vehicle/.test(e.message) ? "รถคันนี้มีคนขับในวันนี้แล้ว เปลี่ยนคนเดิมก่อน" : errMsg(e); $("eErr").hidden = false; }
   };
@@ -956,6 +1002,7 @@ async function account() {
    ${["DRIVER", "MAINTENANCE"].includes(PROFILE.role) ? `<p class="sm" style="margin-top:12px">ลืมรหัสผ่าน ติดต่อผู้ดูแลระบบ</p>` : `<a class="btn block" href="#password" style="margin-top:12px">เปลี่ยนรหัสผ่าน</a>`}<button class="btn danger block" id="out" style="margin-top:10px">ออกจากระบบ</button>
    <p class="sm" style="margin-top:16px">เพิ่มแอปลงหน้าจอมือถือ: iPhone กด แชร์ → เพิ่มไปยังหน้าจอโฮม · Android กด ⋮ → เพิ่มลงในหน้าจอหลัก</p>`;
   $("out").onclick = async () => { await sb.auth.signOut(); location.replace("index.html"); };
+  if (window.myProfileCard) { const h = await window.myProfileCard().catch(() => ""); if (h && location.hash.startsWith("#account")) main().insertAdjacentHTML("beforeend", h); }
 }
 async function password() {
   const forced = PROFILE.must_change_password;
