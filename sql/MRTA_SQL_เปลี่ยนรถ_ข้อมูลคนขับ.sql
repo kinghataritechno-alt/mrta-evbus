@@ -254,5 +254,11 @@ insert into public.employee_profiles(employee_id, address, phone, age_years, age
 values ('67927048-c392-4d88-893c-399c6f2dc22d', '8/192 หมู่ 6 แขวงศีรษะจรเข้ใหญ่ เขตบางเสาธง สมุทรปราการ 10570', '095-436-0263', 35, '2026-10-29')
 on conflict (employee_id) do update set address = excluded.address, phone = excluded.phone, age_years = excluded.age_years, age_as_of = excluded.age_as_of, updated_at = now();
 update public.employees set emp_no = '690902' where id = '67927048-c392-4d88-893c-399c6f2dc22d';
+insert into public.employee_profiles(employee_id, address, phone, age_years, age_as_of)
+values ('af1672a6-77c7-4ccd-a918-3c3cdda53f93', '2 ท่าข้าม 28 แยก 7-4 แขวงแสมดำ เขตบางขุนเทียน กรุงเทพมหานคร', '080-275-9924', 57, '2026-10-29'),
+       ('df77454b-3bc4-40a7-a5bc-e88d1498befe', '207 หมู่ที่ 2 ต.โคกตะเคียน อ.กาบเชิง จ.สุรินทร์', '082-974-1644', 57, '2026-10-29')
+on conflict (employee_id) do update set address = excluded.address, phone = excluded.phone, age_years = excluded.age_years, age_as_of = excluded.age_as_of, updated_at = now();
+update public.employees set emp_no = '671202' where id = 'af1672a6-77c7-4ccd-a918-3c3cdda53f93';
+update public.employees set emp_no = 'SP690001' where id = 'df77454b-3bc4-40a7-a5bc-e88d1498befe';
 
 select 'ok' as ready, (select count(*) from public.employee_profiles) as profiles;
