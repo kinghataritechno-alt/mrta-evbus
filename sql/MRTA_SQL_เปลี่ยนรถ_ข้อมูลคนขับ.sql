@@ -209,6 +209,8 @@ create table if not exists public.employee_profiles (
   phone text,
   birth_date date,
   photo_path text,           -- storage: profiles/<employee_id>/...
+  age_years int check (age_years between 15 and 90),   -- อายุตามที่แจ้ง (เมื่อยังไม่มีวันเกิด)
+  age_as_of date,                                      -- วันที่แจ้งอายุ (ใช้คำนวณอายุปีต่อไป)
   updated_at timestamptz not null default now(),
   updated_by uuid default auth.uid()
 );
@@ -231,5 +233,14 @@ create policy profiles_read on storage.objects for select to authenticated
   using (bucket_id = 'profiles' and (app.is_manager() or (storage.foldername(name))[1] = app.my_employee()::text));
 create policy profiles_write on storage.objects for insert to authenticated with check (bucket_id = 'profiles' and app.is_manager());
 create policy profiles_delete on storage.objects for delete to authenticated using (bucket_id = 'profiles' and app.is_manager());
+
+alter table public.employee_profiles add column if not exists age_years int check (age_years between 15 and 90);
+alter table public.employee_profiles add column if not exists age_as_of date;
+
+-- ข้อมูลที่ผู้จัดการแจ้ง 29 ต.ค. 2569
+insert into public.employee_profiles(employee_id, address, phone, age_years, age_as_of)
+values ('01ddf6bc-d92f-4f1d-a2f8-c09f3ab8c617', '16 หมู่ 7 ถนนพัฒนาชนบท 3 แขวงลาดกระบัง เขตลาดกระบัง กรุงเทพมหานคร 10520', '082-038-9947', 43, '2026-10-29')
+on conflict (employee_id) do update set address = excluded.address, phone = excluded.phone, age_years = excluded.age_years, age_as_of = excluded.age_as_of, updated_at = now();
+update public.employees set emp_no = '690603' where id = '01ddf6bc-d92f-4f1d-a2f8-c09f3ab8c617';
 
 select 'ok' as ready, (select count(*) from public.employee_profiles) as profiles;

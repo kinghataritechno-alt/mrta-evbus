@@ -5,6 +5,9 @@
   const SETUP = `<p class="notice" style="margin-top:12px">ยังไม่ได้เปิดใช้ข้อมูลคนขับในฐานข้อมูล · ให้ผู้ดูแลรันไฟล์ <b>MRTA_SQL_เปลี่ยนรถ_ข้อมูลคนขับ.sql</b> ก่อน</p>`;
   const missing = (e) => /employee_profiles|PGRST20[25]|42P01|schema cache/i.test((e && (e.message || e.code)) || "");
   const ageOf = (b) => { if (!b) return null; const t = dObj(today()), d = dObj(b); let a = t.getFullYear() - d.getFullYear(); if (t.getMonth() < d.getMonth() || (t.getMonth() === d.getMonth() && t.getDate() < d.getDate())) a--; return a; };
+  // age: exact from birth date; otherwise the stated age plus whole years since it was given
+  const ageNow = (p) => { if (!p) return null; if (p.birth_date) return ageOf(p.birth_date); if (p.age_years == null) return null;
+    const a = dObj(p.age_as_of || today()), t = dObj(today()); let y = t.getFullYear() - a.getFullYear(); if (t.getMonth() < a.getMonth() || (t.getMonth() === a.getMonth() && t.getDate() < a.getDate())) y--; return p.age_years + Math.max(0, y); };
   const initials = (n) => esc(String(n || "?").trim().slice(0, 1));
   async function photos(paths) {
     const ps = paths.filter(Boolean); if (!ps.length) return {};
@@ -13,12 +16,12 @@
   }
   const avatar = (p, url, name, big) => url ? `<img class="pf-av${big ? " big" : ""}" src="${url}" data-view="${url}" alt="">` : `<span class="pf-av${big ? " big" : ""} pf-ini">${initials(name)}</span>`;
   const card = (e, p, url, edit) => {
-    const age = ageOf(p && p.birth_date), hv = e.home_vehicle_id ? vById(e.home_vehicle_id) : null;
+    const age = ageNow(p), hv = e.home_vehicle_id ? vById(e.home_vehicle_id) : null;
     return `<article class="card pf">
       <div class="pf-top">${avatar(p, url, e.full_name)}<div style="min-width:0"><b>${esc(e.full_name)}</b><div class="sm">${KTH[e.kind] || ""}${hv ? ` · รถประจำ <b>${hv.code}</b>` : ""}</div></div>${edit ? `<button class="btn" data-pe="${e.id}" style="margin-left:auto">แก้ไข</button>` : ""}</div>
       <dl class="kv" style="margin-top:8px">
         <dt>รหัสพนักงาน</dt><dd class="num">${e.emp_no ? esc(e.emp_no) : `<span class="sm">รอข้อมูล</span>`}</dd>
-        <dt>อายุ</dt><dd>${age != null ? `${age} ปี <span class="sm">(เกิด ${bk(p.birth_date)})</span>` : `<span class="sm">รอข้อมูล</span>`}</dd>
+        <dt>อายุ</dt><dd>${age != null ? `${age} ปี${p.birth_date ? ` <span class="sm">(เกิด ${bk(p.birth_date)})</span>` : ""}` : `<span class="sm">รอข้อมูล</span>`}</dd>
         <dt>เบอร์ติดต่อ</dt><dd>${p && p.phone ? `<a href="tel:${esc(p.phone.replace(/[^0-9+]/g, ""))}" style="color:var(--blue)">${esc(p.phone)}</a>` : `<span class="sm">รอข้อมูล</span>`}</dd>
         <dt>ที่อยู่</dt><dd>${p && p.address ? esc(p.address) : `<span class="sm">รอข้อมูล</span>`}</dd>
       </dl></article>`;
@@ -32,7 +35,7 @@
     ]);
     if (pr.error) { main().innerHTML = missing(pr.error) ? SETUP : `<p class="err">${esc(errMsg(pr.error))}</p>`; return; }
     const P = pr.data || [], pOf = (id) => P.find((x) => x.employee_id === id) || null, urls = await photos(P.map((x) => x.photo_path));
-    const filled = emps.filter((e) => { const p = pOf(e.id); return e.emp_no && p && p.phone && p.address && p.birth_date && p.photo_path; }).length;
+    const filled = emps.filter((e) => { const p = pOf(e.id); return e.emp_no && p && p.phone && p.address && ageNow(p) != null && p.photo_path; }).length;
     main().innerHTML = `<section class="sum"><div class="tile"><small>พนักงานขับรถ</small><b class="num">${emps.length}</b><span>คน</span></div>
       <div class="tile ${filled < emps.length ? "alert" : ""}"><small>ข้อมูลครบ</small><b class="num">${filled}/${emps.length}</b><span>คน</span></div></section>
       <p class="sm" style="margin:8px 0 0">ข้อมูลส่วนบุคคล เห็นเฉพาะผู้จัดการ/ผู้ดูแลระบบ และเจ้าของข้อมูล · แตะรูปเพื่อขยาย · แตะเบอร์เพื่อโทร</p>
@@ -48,7 +51,8 @@
       <div class="grid" style="margin-top:10px">
         <div class="fld full"><label for="pfN">ชื่อ-นามสกุล</label><input id="pfN" value="${esc(e.full_name)}"></div>
         <div class="fld"><label for="pfC">รหัสพนักงาน</label><input id="pfC" inputmode="numeric" value="${esc(e.emp_no || "")}" placeholder="เช่น 690902"></div>
-        <div class="fld"><label for="pfB">วันเกิด (คำนวณอายุ)</label><input id="pfB" type="date" value="${p?.birth_date || ""}" max="${today()}"></div>
+        <div class="fld"><label for="pfB">วันเกิด (ถ้าทราบ)</label><input id="pfB" type="date" value="${p?.birth_date || ""}" max="${today()}"></div>
+        <div class="fld"><label for="pfY">อายุ (ปี) ถ้าไม่ทราบวันเกิด</label><input id="pfY" inputmode="numeric" maxlength="2" value="${p && !p.birth_date && ageNow(p) != null ? ageNow(p) : ""}"></div>
         <div class="fld full"><label for="pfT">เบอร์ติดต่อ</label><input id="pfT" type="tel" inputmode="tel" value="${esc(p?.phone || "")}" placeholder="08x-xxx-xxxx"></div>
         <div class="fld full"><label for="pfA">ที่อยู่</label><textarea id="pfA" rows="3">${esc(p?.address || "")}</textarea></div>
       </div>
@@ -61,6 +65,8 @@
       const err = (m) => { $("pfErr").textContent = m; $("pfErr").hidden = false; };
       const name = $("pfN").value.trim().replace(/\s+/g, " "), code = $("pfC").value.trim() || null, phone = $("pfT").value.trim() || null;
       if (!name) return err("กรุณากรอกชื่อ-นามสกุล");
+      const ay = $("pfY").value.trim() ? +$("pfY").value.replace(/\D/g, "") : null;
+      if (ay != null && (ay < 15 || ay > 90)) return err("อายุต้องอยู่ระหว่าง 15–90 ปี");
       if (phone && phone.replace(/\D/g, "").length < 9) return err("เบอร์ติดต่อไม่ครบ");
       const b = $("pfSave"); b.disabled = true; b.innerHTML = `<span class="spin"></span> กำลังบันทึก…`;
       try {
@@ -68,7 +74,7 @@
         if (blob) { const ext = blob.type === "image/heic" ? "heic" : "jpg"; photo_path = `${e.id}/${Date.now()}.${ext}`;
           const { error } = await sb.storage.from("profiles").upload(photo_path, blob, { contentType: blob.type === "image/heic" ? "image/heic" : "image/jpeg", upsert: false }); if (error) throw error; }
         if (name !== e.full_name || code !== (e.emp_no || null)) await q(sb.from("employees").update({ full_name: name, emp_no: code }).eq("id", e.id));
-        await q(sb.from("employee_profiles").upsert({ employee_id: e.id, address: $("pfA").value.trim() || null, phone, birth_date: $("pfB").value || null, photo_path, updated_at: new Date().toISOString() }, { onConflict: "employee_id" }));
+        await q(sb.from("employee_profiles").upsert({ employee_id: e.id, address: $("pfA").value.trim() || null, phone, birth_date: $("pfB").value || null, age_years: $("pfB").value ? null : ay, age_as_of: $("pfB").value || ay == null ? null : today(), photo_path, updated_at: new Date().toISOString() }, { onConflict: "employee_id" }));
         s.hidden = true; toast("บันทึกข้อมูลแล้ว"); window.driversPage();
       } catch (x) { b.disabled = false; b.textContent = "บันทึก"; err(/employees_emp_no_key|duplicate/.test(errMsg(x)) ? "รหัสพนักงานนี้มีคนใช้แล้ว" : missing(x) ? "ยังไม่ได้เปิดใช้ข้อมูลคนขับ (รอรัน SQL)" : errMsg(x)); }
     };
