@@ -50,7 +50,7 @@
         <div style="display:grid;gap:6px;flex:1"><label class="btn">📷 ถ่ายรูป<input type="file" id="pfCam" accept="image/*" capture="user" hidden></label><label class="btn">🖼️ เลือกรูป<input type="file" id="pfGal" accept="image/*" hidden></label></div></div>
       <div class="grid" style="margin-top:10px">
         <div class="fld full"><label for="pfN">ชื่อ-นามสกุล</label><input id="pfN" value="${esc(e.full_name)}"></div>
-        <div class="fld"><label for="pfC">รหัสพนักงาน</label><input id="pfC" inputmode="numeric" value="${esc(e.emp_no || "")}" placeholder="เช่น 690902"></div>
+        <div class="fld"><label for="pfC">รหัสพนักงาน</label><input id="pfC" autocapitalize="characters" value="${esc(e.emp_no || "")}" placeholder="เช่น 690902 · สำรอง SP690001"></div>
         <div class="fld"><label for="pfB">วันเกิด (ถ้าทราบ)</label><input id="pfB" type="date" value="${p?.birth_date || ""}" max="${today()}"></div>
         <div class="fld"><label for="pfY">อายุ (ปี) ถ้าไม่ทราบวันเกิด</label><input id="pfY" inputmode="numeric" maxlength="2" value="${p && !p.birth_date && ageNow(p) != null ? ageNow(p) : ""}"></div>
         <div class="fld full"><label for="pfT">เบอร์ติดต่อ</label><input id="pfT" type="tel" inputmode="tel" value="${esc(p?.phone || "")}" placeholder="08x-xxx-xxxx"></div>
