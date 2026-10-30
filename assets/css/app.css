@@ -199,7 +199,7 @@ table.t tr:last-child td{border-bottom:0}
 .doc .dh{margin:0 -34px;padding:16px 34px 10px;background:#fff;color:#0f1b3d;display:flex;align-items:center;gap:16px;border-bottom:2px solid #0b2a6b;box-shadow:0 2px 0 #b8865b}
 .doc .dm{height:44px;width:auto;flex:none}
 .doc .dt{flex:1;min-width:0;padding-left:14px;border-left:1px solid #c9d3ea} .doc .dt h1{margin:0;font-size:18px;line-height:1.3;color:#0b2a6b;font-weight:700} .doc .dt p{margin:2px 0 0;font-size:11px;color:#4a5a80}
-.doc .dco{display:flex;align-items:center;gap:9px;flex:none} .doc .dco img{height:54px;width:auto;border-radius:6px} .doc .dco span{font-size:11px;line-height:1.3;font-weight:600;color:#000;white-space:nowrap;text-align:right}
+.doc .dco{display:flex;align-items:center;gap:9px;flex:none} .doc .dco img{height:60px;width:auto;border-radius:6px;image-rendering:-webkit-optimize-contrast} .doc .dco span{font-size:11px;line-height:1.3;font-weight:600;color:#000;white-space:nowrap;text-align:right}
 .doc h2{font-size:14px;margin:12px 0 4px;color:#0b2a6b}
 .doc .dcards{display:flex;gap:8px;margin-top:12px}
 .doc .dcard{flex:1;border:1px solid #c9d3ea;border-top:4px solid var(--c);border-radius:6px;padding:6px 9px;display:flex;flex-direction:column;line-height:1.3}
