@@ -83,7 +83,7 @@ async function makePdf(fname, land, W, H) {
 
 /* ---------- shared document parts ---------- */
 function dHead(title, sub) {
-  return `<header class="dh"><img src="assets/img/mrta-logo-en.png" alt="MRTA" class="dm"><div class="dt"><h1>${title}</h1><p>${sub}</p></div><div class="dco"><img src="assets/img/st-logo-banner.png" alt="SMART TERMINAL CORPORATION"></div></header>`;
+  return `<header class="dh"><img src="assets/img/mrta-logo-en.png" alt="MRTA" class="dm"><div class="dt"><h1>${title}</h1><p>${sub}</p></div><div class="dco"><img src="assets/img/st-logo-banner.png?v=2" alt="SMART TERMINAL CORPORATION"></div></header>`;
 }
 function dFoot(p, n) { return `<footer class="df"><span>MRTA Shuttle Bus · ข้อมูลจากระบบ ณ ${bk(today())} ${nowHM()} น. · ${periodSpan(pdfMonth)}</span><span>หน้า ${p}/${n}</span></footer>`; }
 // signature block: blank space to sign → dotted line → (printed name) → role → date
