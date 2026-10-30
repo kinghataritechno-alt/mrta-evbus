@@ -804,7 +804,10 @@ async function chargeDash() {
   const R = CD.rows, day = R.filter((r) => r.receipt_date === CD.day), sum = (l, f) => l.reduce((x, r) => x + f(r), 0);
   const busTile = (c) => { const l = day.filter((r) => r.bus === c), wait = l.filter((r) => r.source === "app" && !r.receipt_path).length;
     return `<div class="cd-bus" style="--c:${SCOL[c]}"><b>${c}</b><span class="num"><em>${fmt(sum(l, (r) => r.k), 2)}</em> kWh</span><span class="num"><em>${fmt(sum(l, (r) => r.t))}</em> บาท</span><small>${l.length ? `${l.length} ครั้ง` : "ไม่มีการชาร์จ"}${wait ? ` · <i class="w">รอใบเสร็จ ${wait}</i>` : ""}</small></div>`; };
-  const lineTile = (ln, name, sub) => { const l = day.filter((r) => r.line === ln); return `<div class="cd-line"><small>${name}</small><b class="num">${fmt(sum(l, (r) => r.t))}<span>บาท</span></b><span class="num">${fmt(sum(l, (r) => r.k), 2)} kWh · ${l.length} ครั้ง</span><small>${sub}</small></div>`; };
+  const lineTile = (ln, name, sub) => { const l = day.filter((r) => r.line === ln), baht = sum(l, (r) => r.t), kwh = sum(l, (r) => r.k);
+    const px = (CD.pax || []).filter((x) => x.work_date === CD.day && (vById(x.vehicle_id)?.route_code === "R2" ? "R2" : "R1") === ln).reduce((t, x) => t + (x.board || 0), 0);
+    return `<div class="cd-line"><small>${name}</small><b class="num">${fmt(baht)}<span>บาท</span></b><span class="num">${fmt(kwh, 2)} kWh · ${l.length} ครั้ง</span>
+      <span class="num">ผู้โดยสารขึ้น <b>${px.toLocaleString("th-TH")}</b> คน</span><span class="cd-pp num">${px ? `<b>${fmt(baht / px)}</b> บาท/คน · ${fmt(kwh / px, 2)} kWh/คน` : "ยังไม่มีข้อมูลผู้โดยสารของวันนี้"}</span><small>${sub}</small></div>`; };
   // data checks for the month: receipt no. must be 12 digits · same bus, same kWh and amount within 2 days (double entry) · charging longer than 6 hours (forgot to stop)
   const flags = [];
   R.forEach((r, i) => {
