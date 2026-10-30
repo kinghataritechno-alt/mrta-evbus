@@ -1,4 +1,4 @@
--- MRTA Shuttle EV · (1) ปุ่ม "เปลี่ยนรถวันนี้" สำหรับคนขับประจำ (แบบ C) · (2) ข้อมูลคนขับ (โปรไฟล์)
+-- MRTA Shuttle EV · (1) ปุ่ม "เปลี่ยนรถวันนี้" สำหรับคนขับประจำ (แบบ C) · (2) ข้อมูลคนขับ (โปรไฟล์) · (3) แนบใบเสร็จชาร์จไฟภายหลัง
 -- จัดทำ 29 ต.ค. 2569 · รันครั้งเดียวใน Supabase SQL Editor (รันซ้ำได้)
 
 -- ========== 1) เปลี่ยนรถวันนี้ ==========
@@ -168,9 +168,11 @@ begin
   where t.scheduled_time + interval '30 minutes' <= cutoff
     and not exists (select 1 from public.trip_stops s where s.trip_log_id = t.id)
   group by r.employee_id, r.vehicle_id;
-  -- F. บันทึกชาร์จแต่ไม่มีไฟล์ใบเสร็จ
-  insert into _new select c.employee_id, c.vehicle_id, 'receipt', 'medium', 'บันทึกการชาร์จ ' || count(*) || ' ครั้งไม่มีไฟล์ใบเสร็จ: ' || string_agg(coalesce(c.receipt_no, '–'), ', ')
-  from public.charging_records c where c.source = 'app' and c.receipt_path is null and coalesce(c.receipt_date, (c.created_at at time zone 'Asia/Bangkok')::date) = d
+  -- F. ใบเสร็จชาร์จไฟได้จากตู้ชาร์จในวันถัดไป → แนบภายหลังได้ · เตือนเมื่อเลยวันถัดไปแล้วยังไม่แนบ (ชาร์จวันที่ d-14 ถึง d-2)
+  insert into _new select c.employee_id, c.vehicle_id, 'receipt', 'medium',
+    'ค้างแนบใบเสร็จชาร์จไฟ ' || count(*) || ' ครั้ง (ชาร์จวันที่ ' || string_agg(to_char(coalesce(c.receipt_date, (c.created_at at time zone 'Asia/Bangkok')::date), 'DD/MM'), ', ') || ')'
+  from public.charging_records c where c.source = 'app' and c.receipt_path is null and c.employee_id is not null
+    and coalesce(c.receipt_date, (c.created_at at time zone 'Asia/Bangkok')::date) between d - 14 and d - 2
   group by c.employee_id, c.vehicle_id;
   -- G. ตรวจพบไม่ปกติ แต่ยังไม่มีงานแจ้งซ่อม → แจ้งคนขับที่ตรวจ และช่างซ่อม
   insert into _new select i.employee_id, i.vehicle_id, 'defect_job', 'medium', 'ตรวจรถพบ "ไม่ปกติ" แต่ยังไม่สร้างงานแจ้งซ่อม'
@@ -261,4 +263,35 @@ on conflict (employee_id) do update set address = excluded.address, phone = excl
 update public.employees set emp_no = '671202' where id = 'af1672a6-77c7-4ccd-a918-3c3cdda53f93';
 update public.employees set emp_no = 'SP690001' where id = 'df77454b-3bc4-40a7-a5bc-e88d1498befe';
 
-select 'ok' as ready, (select count(*) from public.employee_profiles) as profiles;
+-- ========== 3) แนบใบเสร็จชาร์จไฟภายหลัง (เพิ่ม 30 ต.ค. 2569) ==========
+-- บันทึกการชาร์จได้ก่อน (เวลา แบตเตอรี่) แล้วแนบใบเสร็จ + เลขที่ + kWh + ยอดเงินในวันถัดไป
+alter table public.charging_records alter column receipt_path drop not null;
+alter table public.charging_records alter column receipt_no drop not null;
+alter table public.charging_records alter column kwh drop not null;
+alter table public.charging_records alter column total drop not null;
+
+create or replace function public.attach_receipt(p_id uuid, p_path text, p_no text, p_ref text, p_kwh numeric, p_sub numeric, p_vat numeric, p_total numeric)
+returns void language plpgsql security definer set search_path = '' as $$
+declare r public.charging_records;
+begin
+  select * into r from public.charging_records where id = p_id for update;
+  if not found then raise exception 'ไม่พบบันทึกการชาร์จนี้'; end if;
+  if not (app.is_manager() or r.employee_id = app.my_employee()) then raise exception 'แนบใบเสร็จได้เฉพาะผู้บันทึกการชาร์จหรือผู้จัดการ'; end if;
+  if r.receipt_path is not null and not app.is_manager() then raise exception 'รายการนี้แนบใบเสร็จแล้ว'; end if;
+  if p_path is null or p_path not like r.vehicle_id::text || '/receipt/%' then raise exception 'ไฟล์ใบเสร็จไม่ถูกต้อง'; end if;
+  if coalesce(trim(p_no), '') = '' or coalesce(p_kwh, 0) <= 0 or coalesce(p_total, 0) <= 0 then raise exception 'กรุณากรอกเลขที่ใบเสร็จ kWh และยอดรวม'; end if;
+  update public.charging_records set receipt_path = p_path, receipt_no = trim(p_no), ev_ref = coalesce(nullif(trim(p_ref), ''), ev_ref),
+    kwh = p_kwh, subtotal = p_sub, vat = p_vat, total = p_total where id = p_id;
+end $$;
+revoke all on function public.attach_receipt(uuid, text, text, text, numeric, numeric, numeric, numeric) from public, anon;
+grant execute on function public.attach_receipt(uuid, text, text, text, numeric, numeric, numeric, numeric) to authenticated;
+
+-- อัปโหลดรูปใบเสร็จย้อนหลังได้ แม้วันนี้ไม่ได้ขับรถคันนั้น (เฉพาะรถที่มีบันทึกชาร์จของตัวเองที่ยังไม่มีใบเสร็จ)
+drop policy if exists evidence_receipt_late on storage.objects;
+create policy evidence_receipt_late on storage.objects for insert to authenticated with check (
+  bucket_id = 'evidence' and (storage.foldername(name))[2] = 'receipt'
+  and exists (select 1 from public.charging_records c where c.vehicle_id::text = (storage.foldername(name))[1] and c.receipt_path is null
+              and (app.is_manager() or c.employee_id = app.my_employee())));
+
+select 'ok' as ready, (select count(*) from public.employee_profiles) as profiles,
+  (select count(*) from pg_proc where proname = 'attach_receipt') as attach_receipt;
