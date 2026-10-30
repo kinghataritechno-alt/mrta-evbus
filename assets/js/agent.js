@@ -116,6 +116,7 @@
       <div class="tile ${openA.some((a) => a.severity === "high") ? "alert" : ""}"><small>เรื่องสำคัญ</small><b class="num">${openA.filter((a) => a.severity === "high").length}</b><span>เรื่อง</span></div></section>
       <p class="sm" style="margin:8px 0">${last ? `ตรวจล่าสุด ${bk(bkD(last))} ${tHM(last)} น.` : "ยังไม่ได้ตรวจวันนี้"} · ระบบตรวจเองเวลา 08:00 · 12:00 · 16:00 · 20:45 น. และทบทวนเมื่อวานตอน 07:00 น.</p>
       <div class="acts"><button class="btn pri" id="agRun">🔎 ตรวจตอนนี้</button>${rows.length ? `<button class="btn" id="agCopy">📋 คัดลอกสรุป</button><a class="btn" id="agLine" target="_blank" rel="noopener">📤 ส่ง LINE</a>` : ""}</div>`;
+    h += await problemDash(d, alerts);
     h += rows.length ? `<h2>รายบุคคล <small>${bk(d)}</small></h2><div class="list">${rows.map((r) => `<article class="card">
         <div class="row1"><b>${esc(r.name)}</b><span class="sm">${r.role}${r.veh.size ? " · " + [...r.veh].map(vcodeOf).join(", ") : ""}</span><span class="pill ${r.score >= 90 ? "ok" : r.score >= 70 ? "warn" : "bad"} num">${r.score}</span></div>
         ${r.mine.length ? `<ul class="sm" style="margin:6px 0 0;padding-left:18px;display:grid;gap:4px">${r.mine.map((a) => `<li><span class="pill ${(SEV[a.severity] || SEV.low)[1]}">${(SEV[a.severity] || SEV.low)[0]}</span> <b>${esc((KIND[a.kind] || [a.kind])[0])}</b>${a.vehicle_id && r.veh.size > 1 ? ` (${vcodeOf(a.vehicle_id)})` : ""} — ${esc(a.detail)}${a.ack_at ? ` <em class="sub2">รับทราบ ${tHM(a.ack_at)}</em>` : ` <em class="sub2">ยังไม่รับทราบ</em>`}</li>`).join("")}</ul>` : `<p class="sm" style="margin:6px 0 0">✅ บันทึกครบตามขั้นตอน</p>`}
@@ -126,6 +127,73 @@
     agentPage.text = summaryText(d, rows, last);
     bindAgent();
   };
+  /* ---------- สรุปปัญหาประจำวัน (Dashboard): 1) เที่ยวล่าช้าของวัน 2) ยอดสะสมของเดือน 3) ปัญหาอื่น ๆ ----------
+     ล่าช้า = ถ่ายรูปรายงานหลังเวลาออกตามตารางเกิน LATE_MIN นาที (เกณฑ์เดียวกับรายงานรอบเดินรถ) · ไม่รายงาน = เลยเวลาออก 15 นาทีแล้วไม่มีรูป/ไม่ยกเลิก */
+  const R2_11_FROM = "2026-10-30"; // 11:00 MRT อิสรภาพ เป็นเที่ยวแยกตั้งแต่วันนี้
+  const dirOf = (qc, o) => qc === "R2" ? (o === ORIGIN.HQ ? "ศิริราช: รฟม.สนญ. → MRT อิสรภาพ" : "ศิริราช: MRT อิสรภาพ วนรอบ") : o === ORIGIN.C ? "ขา ศูนย์ฯ → สถานี รฟม." : "ขา สถานี รฟม. → ศูนย์ฯ";
+  async function pageAll(build) { const out = []; for (let i = 0; i < 40000; i += 1000) { const { data, error } = await build().range(i, i + 999); if (error) throw error; out.push(...(data || [])); if (!data || data.length < 1000) break; } return out; }
+  function tripStatus(days, queues, logs, nowD, nowM) {
+    const res = [];
+    queues.forEach((qq) => {
+      if (!days.includes(qq.work_date)) return;
+      tripsOf(qq.queue_code).forEach((t) => {
+        if (qq.queue_code === "R2" && t.time === "11:00" && qq.work_date < R2_11_FROM) return;
+        const l = logs.find((x) => x.vehicle_id === qq.vehicle_id && x.work_date === qq.work_date && String(x.scheduled_time).slice(0, 5) === t.time && x.origin === t.origin);
+        const due = qq.work_date < nowD || (qq.work_date === nowD && minsOf(t.time) + 15 <= nowM);
+        let st = "wait", late = 0;
+        if (l && l.status === "cancelled") st = "cancel";
+        else if (l && l.photo_path) { late = minsOf(tHM(l.taken_at)) - minsOf(t.time); st = late > LATE_MIN ? "late" : "ok"; }
+        else if (due) st = "miss";
+        res.push({ d: qq.work_date, vid: qq.vehicle_id, code: vcodeOf(qq.vehicle_id), qc: qq.queue_code, time: t.time, origin: t.origin, dir: dirOf(qq.queue_code, t.origin), st, late });
+      });
+    });
+    return res;
+  }
+  async function problemDash(d, alerts) {
+    try {
+      const m0 = d.slice(0, 8) + "01", nowD = today(), nowM = minsOf(nowHM());
+      const [queues, logs, stops] = await Promise.all([
+        q(sb.from("vehicle_queue").select("work_date,vehicle_id,queue_code").gte("work_date", m0).lte("work_date", d)),
+        pageAll(() => sb.from("trip_logs").select("vehicle_id,work_date,scheduled_time,origin,taken_at,status,photo_path").gte("work_date", m0).lte("work_date", d)),
+        sb.from("trip_stops").select("trip_log_id,board,alight,vehicle_id").eq("work_date", d).then((r) => r.data || []),
+      ]);
+      const days = [...new Set(queues.map((x) => x.work_date))];
+      const all = tripStatus(days, queues, logs, nowD, nowM), today_ = all.filter((x) => x.d === d);
+      const cnt = (l, st) => l.filter((x) => x.st === st).length;
+      const cars = [...new Set(all.map((x) => x.code))].sort();
+      const lateT = today_.filter((x) => x.st === "late").sort((a, b) => a.code.localeCompare(b.code) || a.time.localeCompare(b.time));
+      const missT = today_.filter((x) => x.st === "miss");
+      // 1) today
+      let h = `<h2 style="margin-top:18px">สรุปปัญหาประจำวัน <small>${bk(d)} · ล่าช้า = รายงานหลังเวลาออกเกิน ${LATE_MIN} นาที</small></h2>
+        <section class="sum"><div class="tile ${lateT.length ? "alert" : ""}"><small>เที่ยวล่าช้า</small><b class="num">${lateT.length}</b><span>เที่ยว</span></div>
+        <div class="tile ${missT.length ? "alert" : ""}"><small>ไม่รายงาน</small><b class="num">${missT.length}</b><span>เที่ยว</span></div>
+        <div class="tile"><small>ตรงเวลา</small><b class="num">${cnt(today_, "ok")}/${today_.length}</b><span>เที่ยว</span></div></section>`;
+      h += `<section class="card" style="margin-top:10px"><b>1. เที่ยวล่าช้ากว่ากำหนด</b>${lateT.length ? `<table class="t" style="margin-top:6px"><thead><tr><th>รถ</th><th>เวลาออก</th><th>เที่ยว</th><th class="r">ช้า</th></tr></thead><tbody>${lateT.map((x) => `<tr><td><b>${x.code}</b></td><td class="num">${x.time}</td><td class="sm">${esc(x.dir)}</td><td class="r num">${x.late} น.</td></tr>`).join("")}</tbody></table>` : `<p class="sm" style="margin:6px 0 0">✅ ไม่มีเที่ยวล่าช้า</p>`}
+        ${missT.length ? `<p class="sm" style="margin:8px 0 0"><b>ไม่รายงาน ${missT.length} เที่ยว:</b> ${cars.map((c) => { const l = missT.filter((x) => x.code === c); return l.length ? `${c} ${l.map((x) => x.time).join(", ")}` : ""; }).filter(Boolean).join(" · ")}</p>` : ""}</section>`;
+      // 2) month to date
+      const byCar = cars.map((c) => { const l = all.filter((x) => x.code === c), lt = l.filter((x) => x.st === "late"); return { c, plan: l.filter((x) => x.st !== "wait" && x.st !== "cancel").length, late: lt.length, miss: cnt(l, "miss"), avg: lt.length ? Math.round(lt.reduce((s, x) => s + x.late, 0) / lt.length) : 0, max: lt.reduce((m, x) => Math.max(m, x.late), 0) }; });
+      const dirs = [...new Set(all.map((x) => x.dir))], slot = {};
+      all.filter((x) => x.st === "late").forEach((x) => { const k = `${x.code} ${x.time} (${x.dir.replace("ขา ", "")})`; slot[k] = (slot[k] || 0) + 1; });
+      const top = Object.entries(slot).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      const tot = byCar.reduce((s, x) => ({ plan: s.plan + x.plan, late: s.late + x.late, miss: s.miss + x.miss }), { plan: 0, late: 0, miss: 0 });
+      h += `<section class="card" style="margin-top:10px"><b>2. ยอดสะสมเดือนนี้</b> <span class="sm">วันที่ 1–${dObj(d).getDate()} ${MS[dObj(d).getMonth()]} ${dObj(d).getFullYear() + 543}</span>
+        <table class="t" style="margin-top:6px"><thead><tr><th>รถ</th><th class="r">ถึงเวลาแล้ว</th><th class="r">ล่าช้า</th><th class="r">ไม่รายงาน</th><th class="r">ช้าเฉลี่ย / สูงสุด</th></tr></thead><tbody>
+        ${byCar.map((x) => `<tr><td><b>${x.c}</b></td><td class="r num">${x.plan}</td><td class="r num">${x.late}${x.plan ? ` <span class="sm">(${Math.round((x.late / x.plan) * 100)}%)</span>` : ""}</td><td class="r num">${x.miss}</td><td class="r num">${x.late ? `${x.avg} / ${x.max} น.` : "–"}</td></tr>`).join("")}
+        <tr><td><b>รวม</b></td><td class="r num"><b>${tot.plan}</b></td><td class="r num"><b>${tot.late}</b></td><td class="r num"><b>${tot.miss}</b></td><td></td></tr></tbody></table>
+        <p class="sm" style="margin:8px 0 0"><b>ล่าช้าแยกตามขา:</b> ${dirs.map((x) => `${esc(x)} <b>${all.filter((y) => y.dir === x && y.st === "late").length}</b>`).join(" · ")}</p>
+        ${top.length ? `<p class="sm" style="margin:6px 0 0"><b>เที่ยวที่ช้าบ่อยที่สุด:</b> ${top.map(([k, n]) => `${esc(k)} ${n} ครั้ง`).join(" · ")}</p>` : ""}</section>`;
+      // 3) other problems
+      const other = (alerts || []).filter((a) => !a.resolved_at && a.kind !== "trips"), grp = {};
+      other.forEach((a) => { const k = (KIND[a.kind] || [a.kind])[0]; (grp[k] = grp[k] || []).push(a); });
+      const byTrip = {}; stops.forEach((x) => { const b = (byTrip[x.trip_log_id] = byTrip[x.trip_log_id] || { b: 0, a: 0, v: x.vehicle_id }); b.b += x.board || 0; b.a += x.alight || 0; });
+      const unbal = Object.values(byTrip).filter((x) => x.b !== x.a);
+      const items = Object.entries(grp).map(([k, l]) => `<li><b>${esc(k)}</b> ${l.length} เรื่อง — ${[...new Set(l.map((a) => (a.vehicle_id ? vcodeOf(a.vehicle_id) : "")).filter(Boolean))].join(", ") || "–"}<br><span class="sm">${l.slice(0, 3).map((a) => esc(a.detail)).join(" · ")}${l.length > 3 ? " · …" : ""}</span></li>`);
+      if (unbal.length) items.push(`<li><b>ผู้โดยสารขึ้น–ลงไม่เท่ากัน</b> ${unbal.length} เที่ยว — ${[...new Set(unbal.map((x) => vcodeOf(x.v)))].join(", ")}</li>`);
+      h += `<section class="card" style="margin-top:10px"><b>3. ปัญหาอื่น ๆ</b>${items.length ? `<ul style="margin:6px 0 0;padding-left:18px;display:grid;gap:6px">${items.join("")}</ul>` : `<p class="sm" style="margin:6px 0 0">✅ ไม่มีปัญหาอื่น</p>`}</section>`;
+      problemDash.text = `\n\n⏱ เที่ยวล่าช้า ${lateT.length} เที่ยว${lateT.length ? ": " + lateT.map((x) => `${x.code} ${x.time} (+${x.late} น.)`).join(", ") : ""}\n❌ ไม่รายงาน ${missT.length} เที่ยว\n📊 สะสมเดือนนี้: ล่าช้า ${tot.late} · ไม่รายงาน ${tot.miss} จาก ${tot.plan} เที่ยว`;
+      return h;
+    } catch (e) { problemDash.text = ""; return `<p class="sm" style="margin-top:14px">สรุปปัญหาประจำวันโหลดไม่สำเร็จ: ${esc(errMsg(e))}</p>`; }
+  }
   function summaryText(d, rows, last) {
     const bad = rows.filter((r) => r.mine.length);
     let t = `📋 สรุปการบันทึกข้อมูล Smart Shuttle Bus EV\n${bkLong(d)}${last ? ` (ตรวจล่าสุด ${tHM(last)} น.)` : ""}\nครบถ้วน ${rows.length - bad.length} คน · มีเรื่องค้าง ${bad.length} คน\n`;
@@ -135,7 +203,7 @@
     });
     const ok = rows.filter((r) => !r.mine.length);
     if (ok.length) t += `\n✅ ครบ: ${ok.map((r) => r.name.split(" ")[0]).join(", ")}`;
-    return t.trim();
+    return (t.trim() + (problemDash.text || "")).trim();
   }
   function bindAgent() {
     const di = $("agD"); if (di) di.onchange = () => { AD = di.value || today(); route(); };
