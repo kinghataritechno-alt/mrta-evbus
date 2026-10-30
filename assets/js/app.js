@@ -810,7 +810,7 @@ function attachSheet(r) {
     <p class="sm" style="margin:0">ชาร์จเวลา ${r.started_at ? tHM(r.started_at) + "–" + tHM(r.ended_at) + " น." : "–"}${r.soc_before != null ? ` · แบต ${r.soc_before}% → ${r.soc_after}%` : ""} · ${esc(r.station || "")}</p>
     <div id="aPrev"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label class="btn block" style="min-height:60px;border-style:dashed">📷 ถ่ายภาพใบเสร็จ<input type="file" accept="image/*" capture="environment" id="aRc" hidden></label>
-      <label class="btn block" style="min-height:60px;border-style:dashed">🖼️ เลือกรูป / PDF<input type="file" accept="image/*,application/pdf" id="aRf" hidden></label></div>
+      <label class="btn block" style="min-height:60px;border-style:dashed">🖼️ เลือกรูป / PDF<input type="file" accept="image/*,application/pdf" id="aRf" hidden></label></div><p id="ocrNote" hidden></p>
     <div class="grid"><div class="fld"><label for="cNo">เลขที่ใบเสร็จ</label><input id="cNo" class="num" inputmode="numeric" placeholder="0069xxxxxxxx"></div>
       <div class="fld"><label for="cRef">เลขอ้างอิงการชาร์จ</label><input id="cRef" value="${esc(r.ev_ref || "")}" placeholder="EV69xxxxxxx"></div>
       <div class="fld"><label for="cK">พลังงาน (kWh)</label><input id="cK" class="big num" inputmode="decimal" value="${r.kwh ?? ""}"></div>
@@ -821,7 +821,8 @@ function attachSheet(r) {
   s.hidden = false; $("shX").onclick = () => (s.hidden = true);
   const pick = async (e) => { const f = e.target.files[0]; if (!f) return; isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
     if (isPdf) { if (f.size > 10 * 1024 * 1024) { toast("ไฟล์ PDF ใหญ่เกิน 10 MB"); return; } blob = f; } else { blob = await shrink(f, 1600, 0.8); if (!blob) { if (!isHeic(f)) toast("เปิดรูปนี้ไม่ได้ ลองถ่ายภาพใหม่"); return; } }
-    $("aPrev").innerHTML = isPdf ? `<div class="card sm">📄 <b>${esc(f.name)}</b> · ${(f.size / 1024).toFixed(0)} KB</div>` : `<img src="${URL.createObjectURL(blob)}" alt="ใบเสร็จ" style="max-width:100%;max-height:260px;display:block;border-radius:10px">`; };
+    $("aPrev").innerHTML = isPdf ? `<div class="card sm">📄 <b>${esc(f.name)}</b> · ${(f.size / 1024).toFixed(0)} KB</div>` : `<img src="${URL.createObjectURL(blob)}" alt="ใบเสร็จ" style="max-width:100%;max-height:260px;display:block;border-radius:10px">`;
+    if (window.ocrFill) window.ocrFill(blob, isPdf, v, "ocrNote"); };
   $("aRc").onchange = pick; $("aRf").onchange = pick;
   ["cK", "cSub", "cVat", "cTot"].forEach((id) => ($(id).oninput = (e) => { e.target.value = e.target.value.replace(/[^\d.]/g, ""); chkCharge(); })); chkCharge();
   $("aSave").onclick = async () => {
@@ -851,7 +852,7 @@ function drawCharge(vs, recent) {
    <p class="sm" style="margin:0 0 8px">ยังไม่มีใบเสร็จ → กด "บันทึกการชาร์จ" ได้เลย แล้วมากด "แนบใบเสร็จ" ที่หน้านี้ในวันถัดไป</p>
    <div style="display:grid;gap:8px">${CH.url ? (CH.pdf ? `<div class="card" style="display:flex;align-items:center;gap:10px"><span style="font-size:1.8rem">📄</span><div class="sm"><b>${esc(CH.name || "ใบเสร็จ.pdf")}</b><br>${(CH.blob.size / 1024).toFixed(0)} KB</div></div>` : `<img src="${CH.url}" alt="ใบเสร็จ" style="max-width:100%;max-height:300px;display:block;border-radius:10px">`) : ""}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label class="btn block" style="min-height:64px;border-style:dashed">📷 ถ่ายภาพใบเสร็จ<input type="file" accept="image/*" capture="environment" id="cRc" hidden></label>
-      <label class="btn block" style="min-height:64px;border-style:dashed">🖼️ เลือกรูป / ไฟล์ PDF<input type="file" accept="image/*,application/pdf" id="cRf" hidden></label></div></div>
+      <label class="btn block" style="min-height:64px;border-style:dashed">🖼️ เลือกรูป / ไฟล์ PDF<input type="file" accept="image/*,application/pdf" id="cRf" hidden></label></div><p id="ocrNote" hidden></p></div>
    <div class="grid" style="margin-top:8px"><div class="fld"><label for="cNo">เลขที่ใบเสร็จ</label><input id="cNo" class="num" inputmode="numeric" placeholder="0069xxxxxxxx"></div>
     <div class="fld"><label for="cRef">เลขอ้างอิงการชาร์จ</label><input id="cRef" placeholder="EV69xxxxxxx"></div>
     <div class="fld"><label for="cK">พลังงาน (kWh)</label><input id="cK" class="big num" inputmode="decimal"></div>
@@ -875,6 +876,7 @@ function drawCharge(vs, recent) {
     if (CH.url) URL.revokeObjectURL(CH.url);
     CH.blob = blob; CH.pdf = isPdf; CH.name = f.name; CH.url = URL.createObjectURL(blob);
     const keep = readCharge(); drawCharge(vs, recent); writeCharge(keep);
+    if (window.ocrFill) window.ocrFill(blob, isPdf, vById(CH.vid), "ocrNote");
   };
   $("cRc").onchange = pick; $("cRf").onchange = pick;
   ["cA", "cB"].forEach((id) => ($(id).oninput = (e) => (e.target.value = e.target.value.replace(/\D/g, ""))));

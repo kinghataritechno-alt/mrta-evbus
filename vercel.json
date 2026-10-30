@@ -35,6 +35,15 @@
           "value": "no-cache, must-revalidate"
         }
       ]
+    },
+    {
+      "source": "/assets/ocr/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=2592000, immutable"
+        }
+      ]
     }
   ]
 }
