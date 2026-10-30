@@ -181,7 +181,7 @@ async function tripReport() {
 
 async function tripPdf(label, days, cars, G, sumC, logs, P) {
   const W = 794, H = 1123, pct = (o, p) => (p ? ((o / p) * 100).toFixed(1) : "0.0");
-  const head = `<header class="dh"><img src="assets/img/mrta-logo-en.png" alt="MRTA" class="dm"><div class="dt"><h1>รายงานรอบเดินรถประจำเดือน ${label}</h1><p>MRTA Shuttle Bus · สแตนด์บายรับออกพร้อมรูปถ่ายประทับเวลา</p></div><div class="dco"><span>บริษัท สมาร์ท เทอร์มินอล<br>คอร์ปอเรชั่น จำกัด</span><img src="assets/img/st-logo-full.png" alt="SMART TERMINAL"></div></header>`;
+  const head = `<header class="dh"><img src="assets/img/mrta-logo-en.png" alt="MRTA" class="dm"><div class="dt"><h1>รายงานรอบเดินรถประจำเดือน ${label}</h1><p>MRTA Shuttle Bus · สแตนด์บายรับออกพร้อมรูปถ่ายประทับเวลา</p></div><div class="dco"><span>บริษัท สมาร์ท เทอร์มินอล<br>คอร์ปอเรชั่น จำกัด</span><img src="assets/img/st-logo-banner.png" alt="SMART TERMINAL CORPORATION"></div></header>`;
   const foot = (p, n) => `<footer class="df"><span>ข้อมูลจากระบบ ณ ${bk(today())} ${nowHM()} น. · เที่ยวตามแผนจากคิวรถประจำวัน</span><span>หน้า ${p}/${n}</span></footer>`;
   const cards = cars.map((c, j) => `<div class="dcard" style="--c:${VHEX[c]}"><b>${c}</b><span>ทะเบียน ${VPLATE[c]}</span><strong>${pct(sumC[j].ok, sumC[j].plan)}%</strong><span>${sumC[j].ok}/${sumC[j].plan} ${c === "STC-03" ? "รอบ" : "เที่ยว"} · ${sumC[j].days} วัน</span></div>`).join("");
   const tot = sumC.reduce((s, x) => ({ ok: s.ok + x.ok, plan: s.plan + x.plan, late: s.late + x.late, can: s.can + x.can }), { ok: 0, plan: 0, late: 0, can: 0 });
