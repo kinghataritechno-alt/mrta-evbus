@@ -797,7 +797,10 @@ async function chargeDash() {
   if (!isMgr()) return "";
   CD.day = CD.day || today();
   const d = dObj(CD.day), a = iso(new Date(d.getFullYear(), d.getMonth(), 1)), b = iso(new Date(d.getFullYear(), d.getMonth() + 1, 0));
-  if (CD.m !== a) { CD.rows = (await q(sb.from("charging_records").select("id,vehicle_id,receipt_date,started_at,ended_at,kwh,total,receipt_no,receipt_path,source").gte("receipt_date", a).lte("receipt_date", b).order("receipt_date")).catch(() => [])).map((r) => ({ ...r, bus: vById(r.vehicle_id)?.code || "ไม่ระบุ", line: vById(r.vehicle_id)?.route_code === "R2" ? "R2" : "R1", k: Number(r.kwh) || 0, t: Number(r.total) || 0 })); CD.m = a; }
+  if (CD.m !== a) {
+    const pax = []; for (let i = 0; i < 50000; i += 1000) { const { data, error } = await sb.from("trip_stops").select("vehicle_id,work_date,board").gte("work_date", a).lte("work_date", b).range(i, i + 999); if (error || !data) break; pax.push(...data); if (data.length < 1000) break; }
+    CD.pax = pax;
+    CD.rows = (await q(sb.from("charging_records").select("id,vehicle_id,receipt_date,started_at,ended_at,kwh,total,receipt_no,receipt_path,source").gte("receipt_date", a).lte("receipt_date", b).order("receipt_date")).catch(() => [])).map((r) => ({ ...r, bus: vById(r.vehicle_id)?.code || "ไม่ระบุ", line: vById(r.vehicle_id)?.route_code === "R2" ? "R2" : "R1", k: Number(r.kwh) || 0, t: Number(r.total) || 0 })); CD.m = a; }
   const R = CD.rows, day = R.filter((r) => r.receipt_date === CD.day), sum = (l, f) => l.reduce((x, r) => x + f(r), 0);
   const busTile = (c) => { const l = day.filter((r) => r.bus === c), wait = l.filter((r) => r.source === "app" && !r.receipt_path).length;
     return `<div class="cd-bus" style="--c:${SCOL[c]}"><b>${c}</b><span class="num"><em>${fmt(sum(l, (r) => r.k), 2)}</em> kWh</span><span class="num"><em>${fmt(sum(l, (r) => r.t))}</em> บาท</span><small>${l.length ? `${l.length} ครั้ง` : "ไม่มีการชาร์จ"}${wait ? ` · <i class="w">รอใบเสร็จ ${wait}</i>` : ""}</small></div>`; };
@@ -815,39 +818,17 @@ async function chargeDash() {
     <p class="sm" style="margin:4px 0 10px">${bkLong(CD.day)} · รวมทั้งวัน <b class="num">${fmt(dayTot)}</b> บาท · <b class="num">${fmt(sum(day, (r) => r.k), 2)}</b> kWh · ยอดรวมนับเฉพาะรายการที่มีใบเสร็จ/ยอดเงินแล้ว</p>
     <h3 class="cd-h">ค่าชาร์จแยกรายคัน</h3><div class="cd-buses">${BUSES.map(busTile).join("")}</div>
     <h3 class="cd-h">ยอดค่าชาร์จแยกตามสาย</h3><div class="cd-lines">${lineTile("R1", "สายหลัก ศูนย์วัฒนธรรมฯ – สถานี รฟม.", "STC-01 · STC-02 · STC-04")}${lineTile("R2", "สายศิริราช MRT อิสรภาพ – รพ.ศิริราช", "STC-03")}</div>
-    <h3 class="cd-h">ประจำเดือน${MS ? " " + ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"][dObj(CD.day).getMonth()] + " " + (dObj(CD.day).getFullYear() + 543) : ""} <small>แตะกราฟเพื่อดูยอดรายวัน · แตะค้างเพื่อเลือกวัน</small></h3>
-    <div class="cd-charts"><div class="card"><b class="cd-ct">พลังงาน (kWh) รายวัน</b><div class="legend" id="cdLegK"></div><div class="chart" id="cdK"></div></div>
-      <div class="card"><b class="cd-ct">ค่าชาร์จ (บาท) รายวัน</b><div class="legend" id="cdLegB"></div><div class="chart" id="cdB"></div></div></div>
+    <h3 class="cd-h">ยอดสะสมประจำเดือน${" " + ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"][dObj(CD.day).getMonth()] + " " + (dObj(CD.day).getFullYear() + 543)} <small>วันที่ 1–${dObj(CD.day).getDate()} · ผู้โดยสาร = จำนวนคนขึ้นรถเท่านั้น</small></h3>
+    ${(() => { const mR = R.filter((r) => r.receipt_date <= CD.day), mP = (CD.pax || []).filter((x) => x.work_date <= CD.day);
+      const paxOf = (f) => mP.filter((x) => f(vById(x.vehicle_id))).reduce((t, x) => t + (x.board || 0), 0);
+      const card = (name, sub, fr, fv, cls, col) => { const l = mR.filter(fr), baht = sum(l, (r) => r.t), kwh = sum(l, (r) => r.k), px = paxOf(fv);
+        return `<div class="cd-mon ${cls}"${col ? ` style="--c:${col}"` : ""}><small>${name}</small><b class="num">${fmt(baht)}<span>บาท</span></b>
+          <span class="num">${fmt(kwh, 2)} kWh · ${l.length} ครั้ง</span><span class="num">ผู้โดยสารขึ้น <b>${px.toLocaleString("th-TH")}</b> คน</span>
+          <span class="cd-pp num">${px ? `<b>${fmt(baht / px)}</b> บาท/คน · ${fmt(kwh / px, 2)} kWh/คน` : "ยังไม่มีข้อมูลผู้โดยสาร"}</span>${sub ? `<small>${sub}</small>` : ""}</div>`; };
+      return `<div class="cd-buses">${BUSES.map((c) => card(c, "", (r) => r.bus === c, (v) => v?.code === c, "bus", SCOL[c])).join("")}</div>
+        <div class="cd-lines3">${card("สายหลัก", "STC-01 · STC-02 · STC-04", (r) => r.line === "R1", (v) => v && v.route_code !== "R2", "line")}${card("สายศิริราช", "STC-03", (r) => r.line === "R2", (v) => v?.route_code === "R2", "line")}${card("รวมทุกคัน ทุกสาย", "", () => true, () => true, "line all")}</div>`; })()}
     ${flags.length ? `<details class="card cd-flags"><summary><b>⚠️ ข้อมูลที่ควรตรวจในเดือนนี้ ${flags.length} รายการ</b></summary><div class="list" style="margin-top:8px">${flags.map(([r, m]) => `<button class="alrow" data-cdf="${r.id}" style="text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:8px 0 0;color:inherit;font:inherit;cursor:pointer;width:100%"><span class="sm"><b>${r.bus}</b> · ${bk(r.receipt_date)} · ${m} ›</span></button>`).join("")}</div></details>` : ""}
   </section>`;
-}
-function dashChart(boxId, legId, axis, ser, unit, dg) {
-  const box = $(boxId); if (!box) return;
-  const sum = (l) => l.reduce((x, v) => x + v, 0), W = 360, H = 220, ml = 44, mr = 12, mt = 14, mb = 28, pw = W - ml - mr, ph = H - mt - mb;
-  const vmax = Math.max(1, ...ser.flatMap((s) => s.v)), raw = vmax / 4, mag = Math.pow(10, Math.floor(Math.log10(raw))), st = [1, 2, 2.5, 5, 10].map((x) => x * mag).find((x) => x >= raw), ymax = Math.ceil((vmax * 1.08) / st) * st;
-  const y = (v) => mt + ph - (v / ymax) * ph, X = (i) => ml + (axis.length === 1 ? pw / 2 : (i * pw) / (axis.length - 1));
-  let g = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${unit} รายวันแยกรายคัน">`;
-  for (let v = 0; v <= ymax + 1e-9; v += st) g += `<line x1="${ml}" x2="${W - mr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${ml - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${Math.round(v).toLocaleString("th-TH")}</text>`;
-  const skip = Math.ceil(axis.length / 8);
-  const lastI = axis.length - 1;
-  axis.forEach((d, i) => { if (i === lastI || (i % skip === 0 && lastI - i >= skip / 2)) g += `<text x="${X(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--muted)">${dObj(d).getDate()}</text>`; });
-  const sel = axis.indexOf(CD.day);
-  if (sel >= 0) g += `<rect x="${X(sel) - 5}" y="${mt}" width="10" height="${ph}" fill="rgba(31,194,255,.12)" rx="3"/>`;
-  g += `<line class="cur" x1="0" x2="0" y1="${mt}" y2="${mt + ph}" stroke="var(--muted)" stroke-dasharray="3 3" visibility="hidden"/>`;
-  ser.forEach((s) => { g += `<polyline points="${s.v.map((v, i) => `${X(i)},${y(v)}`).join(" ")}" fill="none" stroke="${SCOL[s.x]}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
-    s.v.forEach((v, i) => { if (v) g += `<circle cx="${X(i)}" cy="${y(v)}" r="2.8" fill="${SCOL[s.x]}" stroke="var(--card)" stroke-width="1.2"/>`; }); });
-  box.innerHTML = g + `</svg><div class="tip" hidden></div>`;
-  $(legId).innerHTML = ser.map((s) => `<span><i style="--c:${SCOL[s.x]}"></i>${s.x} <b class="num">${fmt(sum(s.v), dg)}</b></span>`).join("") + `<span>รวม <b class="num">${fmt(sum(ser.flatMap((s) => s.v)), dg)}</b> ${unit}</span>`;
-  const svg = box.querySelector("svg"), tip = box.querySelector(".tip"), cur = box.querySelector(".cur");
-  const idx = (ev) => { const r = svg.getBoundingClientRect(), px = ((ev.clientX - r.left) / r.width) * W; return Math.max(0, Math.min(axis.length - 1, Math.round(axis.length === 1 ? 0 : ((px - ml) / pw) * (axis.length - 1)))); };
-  const show = (ev) => { const i = idx(ev); cur.setAttribute("x1", X(i)); cur.setAttribute("x2", X(i)); cur.setAttribute("visibility", "visible");
-    tip.innerHTML = `<b>${bk(axis[i])}</b>` + ser.map((s) => `<div class="r"><span><i style="--c:${SCOL[s.x]}"></i>${s.x}</span><span class="num">${s.v[i] ? fmt(s.v[i], dg) : "–"}</span></div>`).join("") + `<div class="r" style="border-top:1px solid #c9d3ea;margin-top:3px;padding-top:3px"><b>รวม</b><b class="num">${fmt(sum(ser.map((s) => s.v[i])), dg)} ${unit}</b></div>`;
-    tip.hidden = false; const bx = box.getBoundingClientRect(), left = (X(i) / W) * bx.width; tip.style.left = Math.max(0, Math.min(bx.width - tip.offsetWidth, left - tip.offsetWidth / 2)) + "px"; tip.style.top = "0px"; };
-  svg.addEventListener("pointermove", show); svg.addEventListener("pointerdown", show);
-  svg.addEventListener("pointerleave", () => { tip.hidden = true; cur.setAttribute("visibility", "hidden"); });
-  svg.addEventListener("dblclick", (ev) => { CD.day = axis[idx(ev)]; charge(); });
-  let lp = null; svg.addEventListener("pointerdown", (ev) => { clearTimeout(lp); lp = setTimeout(() => { CD.day = axis[idx(ev)]; charge(); }, 650); });
-  ["pointerup", "pointercancel", "pointerleave"].forEach((e) => svg.addEventListener(e, () => clearTimeout(lp)));
 }
 function bindDash() {
   if (!$("cdDay")) return;
@@ -855,12 +836,6 @@ function bindDash() {
   $("cdDay").onchange = (e) => go(e.target.value);
   $("cdPrev").onclick = () => go(iso(new Date(dObj(CD.day).getTime() - 864e5)));
   $("cdNext").onclick = () => go(iso(new Date(dObj(CD.day).getTime() + 864e5)));
-  const d = dObj(CD.day), last = new Date(d.getFullYear(), d.getMonth() + 1, 0), axis = [];
-  for (let t = new Date(d.getFullYear(), d.getMonth(), 1); t <= last && iso(t) <= today(); t.setDate(t.getDate() + 1)) axis.push(iso(t));
-  if (!axis.length) axis.push(CD.day);
-  const ser = (f) => BUSES.map((x) => ({ x, v: axis.map((dd) => CD.rows.filter((r) => r.bus === x && r.receipt_date === dd).reduce((s, r) => s + f(r), 0)) }));
-  dashChart("cdK", "cdLegK", axis, ser((r) => r.k), "kWh", 1);
-  dashChart("cdB", "cdLegB", axis, ser((r) => r.t), "บาท", 0);
   main().querySelectorAll("[data-cdf]").forEach((b) => (b.onclick = async () => { const r = (await q(sb.from("charging_records").select("*").eq("id", b.dataset.cdf)))[0]; if (r) chargeEdit(r); }));
 }
 /* receipts come from the charger the next day: records saved without a receipt wait here until attached */
