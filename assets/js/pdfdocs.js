@@ -181,7 +181,7 @@ function docCert(days, ws, e, shifts, ch) {
   }).join("");
   const kmTot = shifts.reduce((s, x) => s + (x.odo_end != null && x.odo_start != null ? Math.max(0, x.odo_end - x.odo_start) : 0), 0);
   const p = (pdfMonth.getMonth() + 11) % 12;
-  return `<div class="ch"><img src="assets/img/st-logo-full.png" alt="SMART TERMINAL"><h1>แบบบันทึกรับรองเวลาปฏิบัติงานและการใช้รถ</h1></div>
+  return `${dHead("แบบบันทึกรับรองเวลาปฏิบัติงานและการใช้รถ", "MRTA Shuttle Bus · " + periodLabel(pdfMonth) + " · " + periodSpan(pdfMonth))}
    <div class="cf"><span>ประจำเดือน <b>${MONTH[pdfMonth.getMonth()]}</b></span><span>พ.ศ. <b>${pdfMonth.getFullYear() + 543}</b></span><span>สังกัด/แผนก <b>พัฒนาธุรกิจ</b></span><span>โครงการ <b>รถบัสไฟฟ้า MRT</b></span></div>
    <div class="cf"><span>ชื่อ-นามสกุล พนักงาน <b>${esc(e.full_name)}</b></span><span>รหัสพนักงาน <b>${esc(e.emp_no || "รอข้อมูล")}</b></span></div>
    <div class="cf"><span>หมายเลขรถบัสประจำ <b>${homeV || (e.kind === "relief" ? "ขับได้ทุกคัน" : "ตามรถว่าง")}</b></span><span>เส้นทางวิ่งประจำ <b>${routeOf(homeV) || "ตามตารางงาน"}</b></span></div>
