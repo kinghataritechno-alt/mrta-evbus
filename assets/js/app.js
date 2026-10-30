@@ -344,7 +344,7 @@ async function homeDriver() {
           <div class="mb-route">${ROUTE[v.route_code] || ""}</div></div>
         <div class="mb-stats">
           <div><span>${dic("clock")}รอบแรก</span><b class="num">${qq ? String(qq.first_time).slice(0, 5) : "–"}</b><small>${qq ? "จาก" + esc(qq.first_origin) : "ยังไม่มีคิววันนี้"}</small></div>
-          <div><span>${dic("route")}แผนการเดินรถ</span><b class="num">${qq ? (qq.queue_code === "R2" ? "2 รอบ" : qq.planned_trips + " เที่ยว") : "–"}</b><small>วันนี้</small></div>
+          <div><span>${dic("route")}แผนการเดินรถ</span><b class="num">${qq ? ((tripsOf(qq.queue_code).length || qq.planned_trips) + " เที่ยว") : "–"}</b><small>วันนี้</small></div>
           <div><span>${dic("shield")}สถานะรถ</span><b class="st ${st[1]}">${st[0]}</b></div>
         </div></article>`;
     }).join("") + `<div class="mb-acts${canSwitch ? "" : " one"}">
@@ -410,7 +410,7 @@ async function homeFleet() {
       <div class="row1"><b>${v.code}</b><span class="plate num">${v.plate}</span>${role() === "CUSTOMER" ? "" : ins ? `<span class="pill ${ins.result === "normal" ? "ok" : "bad"}">${ins.result === "normal" ? "ตรวจแล้ว" : "ไม่ปกติ"}</span>` : `<span class="pill warn">ยังไม่ตรวจ</span>`}</div>
       <div class="sm">${ROUTE[v.route_code] || ""}</div>
       ${isMgr() ? `<div class="sm">คนขับ <b>${esc(w?.employees?.full_name || "ยังไม่จัด")}</b>${w?.note ? `<em class="sub2">${esc(w.note.includes("แทน") ? "ขับแทน" : w.note)}</em>` : ""}</div>` : ""}
-      <div class="sm num">${qq ? `รอบแรก <b>${String(qq.first_time).slice(0, 5)}</b> · ${qq.queue_code === "R2" ? "2 รอบ" : qq.planned_trips + " เที่ยว"}` : "ไม่มีคิว"}</div></div></article>`;
+      <div class="sm num">${qq ? `รอบแรก <b>${String(qq.first_time).slice(0, 5)}</b> · ${(tripsOf(qq.queue_code).length || qq.planned_trips) + " เที่ยว"}` : "ไม่มีคิว"}</div></div></article>`;
   }).join("") + `</div></div>`;
   h += `<div class="z-menu"><h2>เมนู</h2><div class="actions">${role() === "CUSTOMER" ? ACT.trip + ACT.schedule + ACT.vehicle : ACT.trip + ACT.inspect + ACT.charge + ACT.maint + ACT.schedule + ACT.vehicle + (isMgr() ? ACT.report + ACT.agent + ACT.drivers : ACT.accident)}</div></div>`;
   return h;

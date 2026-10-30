@@ -13,7 +13,7 @@ const TRIP_PAT = {
   SA: "07:30C 08:00R 09:30C 10:00R 11:30C 12:00R 13:30C 14:00R 15:30C 16:00R 17:30C 18:10R",
   SB: "07:30R 08:30C 09:00R 10:30C 11:00R 12:30C 13:00R 14:30C 15:00R 16:30C 17:00R 18:30C",
   SC: "18:30R",
-  R2: "08:30HQ 13:00MRT",
+  R2: "08:30HQ 11:00MRT 13:00MRT", // ศิริราช 3 เที่ยว/วัน (แยก 11:00 จาก MRT อิสรภาพ ออกจากรอบเช้า · 30 ต.ค. 2569)
 };
 const tripsOf = (qc) => (TRIP_PAT[qc] || "").split(" ").filter(Boolean).map((s, i) => ({ no: i + 1, time: s.slice(0, 5), origin: ORIGIN[s.slice(5)] }));
 const LATE_MIN = 5; // บันทึกหลังเวลาออกเกินกี่นาทีถือว่าช้า
@@ -44,11 +44,11 @@ async function tripPage() {
   const extra = logs.filter((l) => !plan.some((t) => t.time === String(l.scheduled_time).slice(0, 5) && t.origin === l.origin));
   main().innerHTML = `${isMgr() || role() === "CUSTOMER" ? `<div class="grid"><div class="fld"><label for="tDate">วันที่</label><input type="date" id="tDate" value="${TRIP.date}"></div></div>` : ""}
    ${busPicker(vs, TRIP.vid, "data-tv")}
-   <section class="sum"><div class="tile"><small>ตามแผน</small><b class="num">${plan.length || "–"}</b><span>${qq?.queue_code === "R2" ? "รอบ" : "เที่ยว"}</span></div><div class="tile"><small>รายงานแล้ว</small><b class="num">${nDone}</b><span>${qq?.queue_code === "R2" ? "รอบ" : "เที่ยว"}</span></div><div class="tile ${plan.length - nDone > 0 && now === 9999 ? "alert" : ""}"><small>ยังไม่รายงาน</small><b class="num">${Math.max(0, plan.length - nDone)}</b><span>${qq?.queue_code === "R2" ? "รอบ" : "เที่ยว"}</span></div></section>
+   <section class="sum"><div class="tile"><small>ตามแผน</small><b class="num">${plan.length || "–"}</b><span>เที่ยว</span></div><div class="tile"><small>รายงานแล้ว</small><b class="num">${nDone}</b><span>${qq?.queue_code === "R2" ? "รอบ" : "เที่ยว"}</span></div><div class="tile ${plan.length - nDone > 0 && now === 9999 ? "alert" : ""}"><small>ยังไม่รายงาน</small><b class="num">${Math.max(0, plan.length - nDone)}</b><span>${qq?.queue_code === "R2" ? "รอบ" : "เที่ยว"}</span></div></section>
    ${qq ? `<p class="sm" style="margin:8px 0 0">${v.code} · คิว ${esc(qq.queue_code)} · ${ROUTE[v.route_code] || ""} · ${bk(TRIP.date)}${paxDay ? ` · ผู้โดยสารขึ้นวันนี้ <b>${paxDay}</b> คน` : ""}</p>` : `<div class="empty" style="margin-top:12px"><b>${v.code} ไม่มีคิววันนี้</b>รถจอดหรือยังไม่ได้จัดตาราง</div>`}
    <div class="list" style="margin-top:8px">${plan.map((t, i) => { const l = done(t), late = l && minsOf(bkkHM(l.taken_at)) > minsOf(t.time) + LATE_MIN;
      return `<button class="day trip ${i === nextIdx ? "today" : ""}" data-trip="${i}" style="text-align:left;cursor:pointer;border-left:4px solid ${l ? (late ? "#ffb347" : "#3fa725") : i === nextIdx ? "#1fc2ff" : "transparent"}">
-       <div class="d"><b class="num">${t.time}</b><small>${qq.queue_code === "R2" ? "รอบ " + t.no : "เที่ยว " + t.no}</small></div>
+       <div class="d"><b class="num">${t.time}</b><small>เที่ยว ${t.no}</small></div>
        <div class="sm">${esc(t.origin)}${!l && logOf(t) && pax(logOf(t)) ? `<em class="sub2">ยังไม่ถ่ายรูปรับออก · ขึ้น ${pax(logOf(t)).b} ลง ${pax(logOf(t)).a}</em>` : ""}${l ? `<em class="sub2">${l.status === "cancelled" ? "ยกเลิก" : `รายงาน ${bkkHM(l.taken_at)} น.${late ? " · ช้า" : ""}${pax(l) ? ` · ขึ้น ${pax(l).b} ลง ${pax(l).a}` : ""}`}</em>` : i === nextIdx ? `<em class="sub2">เที่ยวถัดไป · แตะเพื่อถ่ายรูปรายงาน</em>` : ""}</div></button>`; }).join("")}
    ${extra.map((l) => `<div class="day"><div class="d"><b class="num">${String(l.scheduled_time).slice(0, 5)}</b><small>เพิ่ม</small></div><div class="sm">${esc(l.origin)}<em class="sub2">รายงาน ${bkkHM(l.taken_at)} น. ${esc(l.note || "")}</em></div></div>`).join("")}</div>
    ${isMgr() || role() === "CUSTOMER" ? `<a class="btn block" href="#tripreport" style="margin-top:14px">รายงานรอบเดินรถประจำเดือน</a>` : ""}`;
@@ -62,14 +62,14 @@ function lineText(v, qq, t, note) {
   const isR2 = qq.queue_code === "R2";
   // same layout the LINE group already uses: bus / สแตนด์บายรับออก / รอบ 09.40 น. <pick-up point> 📍
   const place = t.origin === ORIGIN.C ? P_CC : t.origin === ORIGIN.R ? P_LOT : t.origin;
-  const head = isR2 ? `${v.code}\nสแตนด์บายรับออก รอบที่ ${t.no}\nเวลา ${t.time.replace(":", ".")} น. ${t.origin} 📍\n${ROUTE.R2}` : `${v.code}\nสแตนด์บายรับออก\nรอบ ${t.time.replace(":", ".")} น. ${place} 📍`;
+  const head = isR2 ? `${v.code}\nสแตนด์บายรับออก เที่ยวที่ ${t.no}\nเวลา ${t.time.replace(":", ".")} น. ${t.origin} 📍\n${ROUTE.R2}` : `${v.code}\nสแตนด์บายรับออก\nรอบ ${t.time.replace(":", ".")} น. ${place} 📍`;
   return head + (note ? `\n${note}` : "");
 }
 
 function tripSheet(v, qq, t, existing) {
   const s = $("sheet"); TRIP.blob = null; TRIP.trip = t;
   const canEdit = isMgr() || (role() === "DRIVER" && TRIP.date === today());
-  s.innerHTML = `<div class="in"><div class="sh"><b>${v.code} · ${qq.queue_code === "R2" ? "รอบที่ " + t.no : "เที่ยว " + t.no} · ${t.time} น.</b><button class="lnk" id="shX">ปิด</button></div>
+  s.innerHTML = `<div class="in"><div class="sh"><b>${v.code} · เที่ยว ${t.no} · ${t.time} น.</b><button class="lnk" id="shX">ปิด</button></div>
     <p class="sm" style="margin:0 0 10px">สแตนด์บายรับออก ${esc(t.origin)}</p>
     ${existing ? `<p class="notice ok" style="margin:0 0 10px">รายงานแล้ว ${bkkHM(existing.taken_at)} น.${existing.photo_path ? ` · <a href="#" id="tOld">ดูรูป</a>` : ""} · ถ่ายใหม่จะแทนที่ของเดิม</p>` : ""}
     ${canEdit ? `<label class="btn block pri" style="min-height:54px">📷 ถ่ายรูปรถ ณ จุดรับออก<input type="file" id="tCam" accept="image/*" capture="environment" hidden></label>
@@ -85,7 +85,7 @@ function tripSheet(v, qq, t, existing) {
   $("tCam").onchange = async (e) => {
     const f = e.target.files[0]; if (!f) return;
     const shot = new Date();
-    TRIP.blob = await stampPhoto(f, [`${shot.getDate()} ${MS[shot.getMonth()]} ${shot.getFullYear() + 543} ${shot.toTimeString().slice(0, 8)}`, `${v.code} · ${qq.queue_code === "R2" ? "รอบที่ " + t.no : "รอบ " + t.time + " น."}`, t.origin]);
+    TRIP.blob = await stampPhoto(f, [`${shot.getDate()} ${MS[shot.getMonth()]} ${shot.getFullYear() + 543} ${shot.toTimeString().slice(0, 8)}`, `${v.code} · ${"รอบ " + t.time + " น."}`, t.origin]);
     if (!TRIP.blob) return; // reason already shown
     if (TRIP.url) URL.revokeObjectURL(TRIP.url);
     TRIP.url = URL.createObjectURL(TRIP.blob); $("tPrev").src = TRIP.url; $("tPrev").style.display = "block"; $("tSave").disabled = false;
@@ -191,7 +191,7 @@ async function tripPdf(label, days, cars, G, sumC, logs, P) {
     ${cars.map((c, j) => { const x = sumC[j]; return `<tr><td>${c}</td><td class="r">${x.days}</td><td class="r">${x.plan}</td><td class="r">${x.ok}</td><td class="r">${pct(x.ok, x.plan)}</td><td class="r">${x.late}</td><td class="r">${x.can}</td><td class="r">${Math.max(0, x.plan - x.ok - x.can)}</td></tr>`; }).join("")}
     <tr><td><b>รวม</b></td><td></td><td class="r"><b>${tot.plan}</b></td><td class="r"><b>${tot.ok}</b></td><td class="r"><b>${pct(tot.ok, tot.plan)}</b></td><td class="r"><b>${tot.late}</b></td><td class="r"><b>${tot.can}</b></td><td class="r"><b>${Math.max(0, tot.plan - tot.ok - tot.can)}</b></td></tr></tbody></table>
     <h2>รายวัน (รายงานแล้ว/ตามแผน)</h2><table class="dtb sm xs"><thead><tr><th>วันที่</th><th>วัน</th>${cars.map((c) => `<th class="r"><i style="background:${VHEX[c]}"></i>${c}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>
-    <p class="dnote">ช้า = บันทึกหลังเวลาออกตามตารางเกิน ${LATE_MIN} นาที · STC-03 เส้น MRT อิสรภาพ – รพ.ศิริราช นับเป็นรอบ · รูปถ่ายทุกเที่ยวเก็บในระบบ ดูได้ที่เมนูรอบเดินรถ</p>
+    <p class="dnote">ช้า = บันทึกหลังเวลาออกตามตารางเกิน ${LATE_MIN} นาที · STC-03 เส้น MRT อิสรภาพ – รพ.ศิริราช 3 เที่ยว/วัน (08:30 · 11:00 · 13:00) · รูปถ่ายทุกเที่ยวเก็บในระบบ ดูได้ที่เมนูรอบเดินรถ</p>
     ${dSign(["ผู้จัดทำ", "ผู้ตรวจสอบ", "ผู้อนุมัติ"])}${foot(1, P && P.n ? 2 : 1)}`;
   let p2 = "";
   if (P && P.n) {
@@ -223,8 +223,9 @@ async function tripPdf(label, days, cars, G, sumC, logs, P) {
 /* ---------- passengers per stop (replaces the paper "ตารางการเก็บข้อมูลผู้ใช้บริการ") ---------- */
 const P_CC = "อาคารจอดรถศูนย์วัฒนธรรมฯ", P_LOT = "ลานจอดรถ สถานี รฟม.", P_B2 = "อาคาร 2 รฟม.", P_B1 = "อาคาร 1 รฟม.";
 const R2_STOPS = {
-  1: ["รฟม. สำนักงานใหญ่", "รพ.ศิริราช", "ตรงข้าม The Most อิสรภาพ", "ตรงข้าม dBura อิสรภาพ", "MRT อิสรภาพ", "ตรงข้ามวัดอรุณราชวราราม", "ตรงข้าม รพ.ศิริราช", "ซอยอรุณอมรินทร์ 53 (ลุมพินีคอนโด)", "หอพักเจ้าพระยา (ศิริราช)", "รพ.ศิริราช (วงเวียน)", "ตรงข้าม The Most อิสรภาพ", "ตรงข้าม dBura อิสรภาพ", "MRT อิสรภาพ"],
+  1: ["รฟม. สำนักงานใหญ่", "รพ.ศิริราช", "ตรงข้าม The Most อิสรภาพ", "ตรงข้าม dBura อิสรภาพ", "MRT อิสรภาพ"],
   2: ["MRT อิสรภาพ", "ตรงข้ามวัดอรุณราชวราราม", "ตรงข้าม รพ.ศิริราช", "ซอยอรุณอมรินทร์ 53 (ลุมพินีคอนโด)", "หอพักเจ้าพระยา (ศิริราช)", "รพ.ศิริราช (วงเวียน)", "ตรงข้าม The Most อิสรภาพ", "ตรงข้าม dBura อิสรภาพ", "MRT อิสรภาพ"],
+  3: ["MRT อิสรภาพ", "ตรงข้ามวัดอรุณราชวราราม", "ตรงข้าม รพ.ศิริราช", "ซอยอรุณอมรินทร์ 53 (ลุมพินีคอนโด)", "หอพักเจ้าพระยา (ศิริราช)", "รพ.ศิริราช (วงเวียน)", "ตรงข้าม The Most อิสรภาพ", "ตรงข้าม dBura อิสรภาพ", "MRT อิสรภาพ"],
 };
 // ศูนย์ฯ → อาคาร 2 → อาคาร 1 → ลานจอด รฟม. · ลานจอด รฟม. → อาคาร 2 → อาคาร 1 → ศูนย์ฯ (ตามแบบฟอร์มเดิม)
 const stopsOf = (qc, t) => qc === "R2" ? R2_STOPS[t.no] || [] : t.origin === ORIGIN.C ? [P_CC, P_B2, P_B1, P_LOT] : [P_LOT, P_B2, P_B1, P_CC];
@@ -287,7 +288,7 @@ async function tripStops() {
   const R = ST.rows, cur = R.findIndex((r) => !r.departed_at);
   const tb = R.reduce((s, r) => s + r.board, 0), ta = R.reduce((s, r) => s + r.alight, 0), onboard = tb - ta, bad = paxCheck(R);
   const hm = (ts) => (ts ? tHM(ts) : "–");
-  main().innerHTML = `<section class="card"><div class="row1"><b>${ST.code} · ${ST.qc === "R2" ? "รอบที่ " + ST.no : "เที่ยว " + ST.no} · ${ST.time} น.</b><span class="pill ${cur < 0 ? "ok" : "warn"}">${cur < 0 ? "จบเที่ยว" : "กำลังวิ่ง"}</span></div>
+  main().innerHTML = `<section class="card"><div class="row1"><b>${ST.code} · เที่ยว ${ST.no} · ${ST.time} น.</b><span class="pill ${cur < 0 ? "ok" : "warn"}">${cur < 0 ? "จบเที่ยว" : "กำลังวิ่ง"}</span></div>
      <p class="sm" style="margin:4px 0 0">ออกจาก${esc(ST.origin)} · ${bk(ST.date)}</p></section>
    <section class="sum"><div class="tile"><small>ขึ้นรวม</small><b class="num">${tb}</b><span>คน</span></div><div class="tile"><small>ลงรวม</small><b class="num">${ta}</b><span>คน</span></div><div class="tile ${onboard < 0 || bad ? "alert" : ""}"><small>บนรถตอนนี้</small><b class="num" id="sOn">${onboard}</b><span>คน</span></div></section>
    ${bad ? `<p class="err" style="margin-top:10px">⚠️ ตัวเลขไม่สัมพันธ์กัน — ${esc(bad)} · แตะจุดนั้นเพื่อแก้ไข</p>` : cur < 0 && onboard !== 0 ? `<p class="err" style="margin-top:10px">⚠️ จบเที่ยวแล้วแต่ยังเหลือคนบนรถ ${onboard} คน · ตรวจจำนวนคนลงที่จุดสุดท้าย</p>` : cur < 0 && tb ? `<p class="okbox" style="margin-top:10px">✓ ขึ้น ${tb} = ลง ${ta} คน ตัวเลขสัมพันธ์กันครบ</p>` : ""}
@@ -505,7 +506,7 @@ async function paxStats(a, b) {
   });
   return { byDay, byStop, bySlot, byTime, byCar, total: Object.values(byCar).reduce((x, y) => x + y, 0), n: S.length };
 }
-const STOP_ORD = ["CC|" + P_CC, "CC|" + P_B2, "CC|" + P_B1, "LOT|" + P_LOT, "LOT|" + P_B2, "LOT|" + P_B1, ...R2_STOPS[1].map((x) => "R2|" + x)];
+const STOP_ORD = ["CC|" + P_CC, "CC|" + P_B2, "CC|" + P_B1, "LOT|" + P_LOT, "LOT|" + P_B2, "LOT|" + P_B1, ...[...new Set([...R2_STOPS[1], ...R2_STOPS[2]])].map((x) => "R2|" + x)];
 const stopOrder = (o) => Object.entries(o).filter(([, n]) => n > 0).sort((x, y) => { const a = STOP_ORD.indexOf(x[0]), b = STOP_ORD.indexOf(y[0]); return (a < 0 ? 99 : a) - (b < 0 ? 99 : b); });
 window.paxStats = paxStats;
 
