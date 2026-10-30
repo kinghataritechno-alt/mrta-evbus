@@ -780,7 +780,7 @@ const setRun = (r) => { try { r ? localStorage.setItem(RUNKEY, JSON.stringify(r)
 let CH = { vid: null, blob: null, url: null };
 async function charge() {
   const vs = myVehicles();
-  const recent = await q(sb.from("charging_records").select("*").order("created_at", { ascending: false }).limit(isMgr() ? 30 : 20));
+  const recent = await listRows();
   CH.recent = recent; delete main().dataset.ocrWarn;
   CH.pend = await pendingReceipts();
   CH.dash = await chargeDash();
@@ -954,8 +954,52 @@ async function chargeEdit(r, after) {
   };
   draw();
 }
-function bindRecent() { main().querySelectorAll("[data-chg]").forEach((c) => (c.onclick = () => { const r = (CH.recent || []).find((x) => x.id === c.dataset.chg); if (r) chargeEdit(r); })); }
-function recentHTML(rows) { return `<h2>บันทึกล่าสุด <small>${isMgr() ? "ทุกคัน" : "ของคุณ"}</small></h2>` + (rows.length ? `<div class="list">${rows.map((r) => { const v = vById(r.vehicle_id); return `<button class="card" data-chg="${r.id}" style="border-left:4px solid ${v ? COLOR[v.code] : "var(--line)"};text-align:left;width:100%;font:inherit;color:inherit;cursor:pointer"><div class="row1"><b>${v?.code || "ไม่ระบุรถ"}</b><span class="sm">${bk(r.receipt_date || bkD(r.started_at))}${r.started_at ? " " + tHM(r.started_at) + "–" + tHM(r.ended_at) : ""}</span>${r.receipt_path || r.source !== "app" ? `<span class="pill info num">${fmt(r.total)} บาท</span>` : `<span class="pill warn">รอใบเสร็จ</span>`}</div><div class="sm num">${r.receipt_no ? "ใบเสร็จ " + r.receipt_no + " · " : ""}${r.kwh != null ? fmt(r.kwh, 2) + " kWh" : ""}${r.soc_before != null ? ` · แบต ${r.soc_before}% → ${r.soc_after}%` : ""}${r.source === "import" ? " · นำเข้า" : ""}</div><div class="sm" style="margin-top:2px;color:var(--blue)">${canEditCharge(r) ? "แตะเพื่อดู / แก้ไข / ลบ ›" : "แตะเพื่อดูรายละเอียด ›"}</div></button>`; }).join("")}</div>` : `<div class="empty">ยังไม่มีบันทึกการชาร์จ</div>`); }
+/* charging records list: by day (default today) or by month, all buses or one bus · compact table, tap a row to view / edit / delete */
+const LV = { mode: "day", day: null, mon: null, bus: "" };
+async function listRows() {
+  LV.day = LV.day || today(); LV.mon = LV.mon || today().slice(0, 7);
+  let qq = sb.from("charging_records").select("*");
+  if (LV.mode === "day") qq = qq.eq("receipt_date", LV.day);
+  else { const [y, m] = LV.mon.split("-").map(Number); qq = qq.gte("receipt_date", `${LV.mon}-01`).lte("receipt_date", iso(new Date(y, m, 0))); }
+  if (LV.bus) qq = qq.eq("vehicle_id", LV.bus);
+  return q(qq.order("receipt_date", { ascending: false }).order("started_at", { ascending: false }).limit(1000));
+}
+function listHTML(rows) {
+  const mon = (k) => { const [y, m] = k.split("-").map(Number); return `${["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"][m - 1]} ${y + 543}`; };
+  const sum = (l, f) => l.reduce((x, r) => x + (Number(f(r)) || 0), 0), wait = (r) => r.source === "app" && !r.receipt_path;
+  const label = LV.mode === "day" ? bkLong(LV.day) : mon(LV.mon), atEnd = LV.mode === "day" ? LV.day >= today() : LV.mon >= today().slice(0, 7);
+  const row = (r) => { const v = vById(r.vehicle_id);
+    return `<tr data-chg="${r.id}"><td class="num">${LV.mode === "month" ? "" : ""}${r.started_at ? `${tHM(r.started_at)}–${tHM(r.ended_at)}` : "–"}</td><td><i class="dot" style="background:${v ? SCOL[v.code] : "var(--s0)"}"></i><b>${v?.code || "–"}</b></td>
+      <td class="r num">${r.kwh != null ? fmt(r.kwh, 2) : "–"}</td><td class="r num">${r.total != null ? fmt(r.total) : "–"}</td>
+      <td class="c">${wait(r) ? `<span class="pill warn">รอ</span>` : r.receipt_path ? "🧾" : "–"}</td><td class="c chev">›</td></tr>`; };
+  let body = "";
+  if (LV.mode === "day") body = rows.map(row).join("");
+  else { const days = [...new Set(rows.map((r) => r.receipt_date))];
+    body = days.map((d) => { const l = rows.filter((r) => r.receipt_date === d);
+      return `<tr class="lv-day"><td colspan="2"><b>${bk(d)}</b> <span class="sm">${DOW[dObj(d).getDay()]} · ${l.length} ครั้ง</span></td><td class="r num"><b>${fmt(sum(l, (r) => r.kwh), 2)}</b></td><td class="r num"><b>${fmt(sum(l, (r) => r.total))}</b></td><td colspan="2"></td></tr>` + l.map(row).join(""); }).join(""); }
+  const chips = isMgr() ? `<div class="chips lv-bus">${[["", "ทุกคัน"], ...VEH.map((v) => [v.id, v.code])].map(([id, l]) => `<button class="chip" data-lvb="${id}" aria-pressed="${LV.bus === id}">${l}</button>`).join("")}</div>` : "";
+  return `<div class="row1 lv-head"><h2 style="margin:0">บันทึกการชาร์จ <small>${isMgr() ? "" : "ของคุณ"}</small></h2>
+      <span class="lv-seg"><button data-lvm="day" aria-pressed="${LV.mode === "day"}">รายวัน</button><button data-lvm="month" aria-pressed="${LV.mode === "month"}">รายเดือน</button></span></div>
+    <div class="lv-nav"><button class="lnk" data-lvs="-1" aria-label="ก่อนหน้า">‹</button>${LV.mode === "day" ? `<input type="date" id="lvDay" value="${LV.day}" max="${today()}">` : `<input type="month" id="lvMon" value="${LV.mon}" max="${today().slice(0, 7)}">`}<button class="lnk" data-lvs="1" aria-label="ถัดไป" ${atEnd ? "disabled" : ""}>›</button>
+      ${LV.mode === "day" && LV.day !== today() ? `<button class="lnk" data-lvt="1">วันนี้</button>` : ""}</div>${chips}
+    <p class="sm" style="margin:6px 0">${label} · <b class="num">${rows.length}</b> ครั้ง · <b class="num">${fmt(sum(rows, (r) => r.kwh), 2)}</b> kWh · <b class="num">${fmt(sum(rows, (r) => r.total))}</b> บาท${rows.some(wait) ? ` · รอใบเสร็จ <b>${rows.filter(wait).length}</b>` : ""}</p>
+    ${rows.length ? `<section class="card lv-card"><table class="t lv"><thead><tr><th>เวลาชาร์จ</th><th>รถ</th><th class="r">kWh</th><th class="r">บาท</th><th class="c">ใบเสร็จ</th><th></th></tr></thead><tbody>${body}</tbody></table></section>
+      <p class="sm" style="margin:6px 0 0">แตะแถวเพื่อดูใบเสร็จ / แก้ไข / ลบ</p>` : `<div class="empty">ไม่มีบันทึกการชาร์จ${LV.mode === "day" ? "ในวันนี้" : "ในเดือนนี้"}</div>`}`;
+}
+function bindRecent() {
+  const box = $("chList"); if (!box) return;
+  const reload = async () => { box.style.opacity = ".5"; try { CH.recent = await listRows(); box.innerHTML = listHTML(CH.recent); } catch (e) { toast(errMsg(e)); } box.style.opacity = ""; bindRecent(); };
+  box.querySelectorAll("[data-chg]").forEach((c) => (c.onclick = () => { const r = (CH.recent || []).find((x) => x.id === c.dataset.chg); if (r) chargeEdit(r); }));
+  box.querySelectorAll("[data-lvm]").forEach((b) => (b.onclick = () => { LV.mode = b.dataset.lvm; if (LV.mode === "month") LV.mon = LV.day.slice(0, 7); reload(); }));
+  box.querySelectorAll("[data-lvb]").forEach((b) => (b.onclick = () => { LV.bus = b.dataset.lvb; reload(); }));
+  box.querySelectorAll("[data-lvs]").forEach((b) => (b.onclick = () => { const k = +b.dataset.lvs;
+    if (LV.mode === "day") LV.day = iso(new Date(dObj(LV.day).getTime() + k * 864e5)); else { const [y, m] = LV.mon.split("-").map(Number), t = new Date(y, m - 1 + k, 1); LV.mon = iso(t).slice(0, 7); }
+    if (LV.day > today()) LV.day = today(); reload(); }));
+  const t = box.querySelector("[data-lvt]"); if (t) t.onclick = () => { LV.day = today(); reload(); };
+  const di = $("lvDay"); if (di) di.onchange = () => { if (di.value) { LV.day = di.value > today() ? today() : di.value; reload(); } };
+  const mi = $("lvMon"); if (mi) mi.onchange = () => { if (mi.value) { LV.mon = mi.value; reload(); } };
+}
+function recentHTML(rows) { return `<section id="chList" style="margin-top:16px">${listHTML(rows)}</section>`; }
 function drawCharge(vs, recent) {
   const run = getRun(), v = vById(CH.vid);
   main().innerHTML = `${CH.dash || ""}${pendHTML(CH.pend || [])}<h2>เลือกรถเพื่อทำการชาร์จไฟฟ้า</h2>${busPicker(vs, CH.vid)}
