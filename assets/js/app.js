@@ -299,7 +299,7 @@ const DMENU = () => [
   ["#vehicle", ACT_IC.vehicle, "ข้อมูลรถ", "ข้อมูลประจำรถ"],
   ["#ai", null, "Smart AI ผู้ช่วย", "สอบถามข้อมูล / คู่มือ"],
 ];
-const dTile = ([href, icon, t, sub]) => `<a class="dm" href="${href}">${icon ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>` : `<img src="assets/img/smartai-96.png?v=2" alt="">`}<b>${t}</b><small>${sub}</small></a>`;
+const dTile = ([href, icon, t, sub]) => `<a class="dmt" href="${href}">${icon ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>` : `<img src="assets/img/smartai-96.png?v=2" alt="">`}<b>${t}</b><small>${sub}</small></a>`;
 async function heroCard() {
   const P = window.myProfileData ? await window.myProfileData().catch(() => null) : null;
   const e = P?.e, p = P?.p, name = e?.full_name || ME.employee?.name || PROFILE.display_name;

@@ -83,7 +83,7 @@ async function makePdf(fname, land, W, H) {
 
 /* ---------- shared document parts ---------- */
 function dHead(title, sub) {
-  return `<header class="dh"><img src="assets/img/mrta-logo.png" alt="" class="dm"><div class="dt"><h1>${title}</h1><p>${sub}</p></div><div class="dco"><img src="assets/img/smart-terminal-logo.png" alt=""><span>บริษัท สมาร์ท เทอร์มินอล<br>คอร์ปอเรชั่น จำกัด</span></div></header>`;
+  return `<header class="dh"><img src="assets/img/mrta-logo-en.png" alt="MRTA" class="dm"><div class="dt"><h1>${title}</h1><p>${sub}</p></div><div class="dco"><span>บริษัท สมาร์ท เทอร์มินอล<br>คอร์ปอเรชั่น จำกัด</span><img src="assets/img/st-logo-full.png" alt="SMART TERMINAL"></div></header>`;
 }
 function dFoot(p, n) { return `<footer class="df"><span>MRTA Shuttle Bus · ข้อมูลจากระบบ ณ ${bk(today())} ${nowHM()} น. · ${periodSpan(pdfMonth)}</span><span>หน้า ${p}/${n}</span></footer>`; }
 // signature block: blank space to sign → dotted line → (printed name) → role → date
@@ -181,7 +181,7 @@ function docCert(days, ws, e, shifts, ch) {
   }).join("");
   const kmTot = shifts.reduce((s, x) => s + (x.odo_end != null && x.odo_start != null ? Math.max(0, x.odo_end - x.odo_start) : 0), 0);
   const p = (pdfMonth.getMonth() + 11) % 12;
-  return `<div class="ch"><img src="assets/img/smart-terminal-logo.png" alt=""><h1>แบบบันทึกรับรองเวลาปฏิบัติงานและการใช้รถ</h1></div>
+  return `<div class="ch"><img src="assets/img/st-logo-full.png" alt="SMART TERMINAL"><h1>แบบบันทึกรับรองเวลาปฏิบัติงานและการใช้รถ</h1></div>
    <div class="cf"><span>ประจำเดือน <b>${MONTH[pdfMonth.getMonth()]}</b></span><span>พ.ศ. <b>${pdfMonth.getFullYear() + 543}</b></span><span>สังกัด/แผนก <b>พัฒนาธุรกิจ</b></span><span>โครงการ <b>รถบัสไฟฟ้า MRT</b></span></div>
    <div class="cf"><span>ชื่อ-นามสกุล พนักงาน <b>${esc(e.full_name)}</b></span><span>รหัสพนักงาน <b>${esc(e.emp_no || "รอข้อมูล")}</b></span></div>
    <div class="cf"><span>หมายเลขรถบัสประจำ <b>${homeV || (e.kind === "relief" ? "ขับได้ทุกคัน" : "ตามรถว่าง")}</b></span><span>เส้นทางวิ่งประจำ <b>${routeOf(homeV) || "ตามตารางงาน"}</b></span></div>
