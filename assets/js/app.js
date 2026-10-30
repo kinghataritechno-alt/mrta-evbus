@@ -404,7 +404,7 @@ async function homeFleet() {
   h = `<div class="z-top">${top}</div><div class="z-side">${h}`;
   if (isMgr()) h += await nextPeriodCard();
   if (queue.length === 0) h += `<p class="notice" style="margin-top:12px">ยังไม่มีคิวรถของวันนี้ในระบบ</p>`;
-  h += `</div><div class="z-main"><h2>การเดินรถวันนี้ <small id="lvAt">แบบเรียลไทม์ · อัปเดตทุก 1 นาที</small></h2><section class="card live-card"><div id="liveChart"><p class="loading"><span class="spin"></span>กำลังโหลดกราฟ…</p></div></section><h2>รถวันนี้</h2><div class="list">` + VEH.map((v) => {
+  h += `</div><div class="z-main"><section id="paxDash">${await paxDashHTML()}</section><h2>การเดินรถวันนี้ <small id="lvAt">แบบเรียลไทม์ · อัปเดตทุก 1 นาที</small></h2><section class="card live-card"><div id="liveChart"><p class="loading"><span class="spin"></span>กำลังโหลดกราฟ…</p></div></section><h2>รถวันนี้</h2><div class="list">` + VEH.map((v) => {
     const w = ws.find((x) => x.vehicle_id === v.id && x.status === "work"), qq = queue.find((x) => x.vehicle_id === v.id), ins = insp.find((x) => x.vehicle_id === v.id);
     return `<article class="bus" style="--c:${COLOR[v.code]}"><img src="${busImg(v.code)}" alt=""><div class="b">
       <div class="row1"><b>${v.code}</b><span class="plate num">${v.plate}</span>${role() === "CUSTOMER" ? "" : ins ? `<span class="pill ${ins.result === "normal" ? "ok" : "bad"}">${ins.result === "normal" ? "ตรวจแล้ว" : "ไม่ปกติ"}</span>` : `<span class="pill warn">ยังไม่ตรวจ</span>`}</div>
@@ -414,6 +414,32 @@ async function homeFleet() {
   }).join("") + `</div></div>`;
   h += `<div class="z-menu"><h2>เมนู</h2><div class="actions">${role() === "CUSTOMER" ? ACT.trip + ACT.schedule + ACT.vehicle : ACT.trip + ACT.inspect + ACT.charge + ACT.maint + ACT.schedule + ACT.vehicle + (isMgr() ? ACT.report + ACT.agent + ACT.drivers : ACT.accident)}</div></div>`;
   return h;
+}
+/* ---- Passenger dashboard on the fleet home (managers / customer): boardings per day, สายหลัก vs สายศิริราช, per bus, month to date ---- */
+const PD = { day: null };
+async function paxDashHTML() {
+  PD.day = PD.day || today();
+  const d = dObj(PD.day), m0 = iso(new Date(d.getFullYear(), d.getMonth(), 1));
+  const rows = []; for (let i = 0; i < 40000; i += 1000) { const { data, error } = await sb.from("trip_stops").select("vehicle_id,work_date,trip_log_id,board").gte("work_date", m0).lte("work_date", PD.day).range(i, i + 999); if (error) return ""; rows.push(...(data || [])); if (!data || data.length < 1000) break; }
+  const lineOf = (vid) => (vById(vid)?.route_code === "R2" ? "R2" : "R1");
+  const day = rows.filter((x) => x.work_date === PD.day), sum = (l) => l.reduce((t, x) => t + (x.board || 0), 0), trips = (l) => new Set(l.map((x) => x.trip_log_id)).size;
+  const nDays = new Set(rows.map((x) => x.work_date)).size || 1;
+  const line = (ln, name, sub) => { const l = day.filter((x) => lineOf(x.vehicle_id) === ln), m = rows.filter((x) => lineOf(x.vehicle_id) === ln), n = sum(l), t = trips(l);
+    return `<div class="pd-line"><small>${name}</small><b class="num">${n.toLocaleString("th-TH")}<span>คน</span></b><span class="num">${t} เที่ยวที่บันทึก${t ? ` · เฉลี่ย ${(n / t).toFixed(1)} คน/เที่ยว` : ""}</span>
+      <span class="pd-m num">สะสมเดือนนี้ <b>${sum(m).toLocaleString("th-TH")}</b> คน · เฉลี่ย ${Math.round(sum(m) / nDays).toLocaleString("th-TH")} คน/วัน</span><small>${sub}</small></div>`; };
+  const bus = VEH.map((v) => { const n = sum(day.filter((x) => x.vehicle_id === v.id)); return `<span class="pd-bus" style="--c:${SCOL[v.code]}"><i></i>${v.code} <b class="num">${n.toLocaleString("th-TH")}</b></span>`; }).join("");
+  const all = sum(day);
+  return `<div class="row1" style="flex-wrap:wrap;gap:8px"><h2 style="margin:0">ผู้โดยสารรายวัน <small>นับคนขึ้นรถ</small></h2><span class="cd-nav"><button class="lnk" id="pdPrev" aria-label="วันก่อนหน้า">‹</button><input type="date" id="pdDay" value="${PD.day}" max="${today()}"><button class="lnk" id="pdNext" aria-label="วันถัดไป" ${PD.day >= today() ? "disabled" : ""}>›</button></span></div>
+    <p class="sm" style="margin:4px 0 8px">${bkLong(PD.day)} · รวมทั้งหมด <b class="num">${all.toLocaleString("th-TH")}</b> คน</p>
+    <div class="pd-lines">${line("R1", "สายหลัก ศูนย์วัฒนธรรมฯ – สถานี รฟม.", "STC-01 · STC-02 · STC-04")}${line("R2", "สายศิริราช MRT อิสรภาพ – รพ.ศิริราช", "STC-03")}</div>
+    <div class="pd-buses">${bus}</div>`;
+}
+function bindPaxDash() {
+  if (!$("pdDay")) return;
+  const go = async (d) => { if (!d || d > today()) return; PD.day = d; const box = $("paxDash"); box.style.opacity = ".5"; box.innerHTML = await paxDashHTML(); box.style.opacity = ""; bindPaxDash(); };
+  $("pdDay").onchange = (e) => go(e.target.value);
+  $("pdPrev").onclick = () => go(iso(new Date(dObj(PD.day).getTime() - 864e5)));
+  $("pdNext").onclick = () => go(iso(new Date(dObj(PD.day).getTime() + 864e5)));
 }
 /* ---- Next-period schedule reminder (managers): schedule must be finished by the 23rd; it is used from the 26th ---- */
 // Official Thai public holidays (ข้อมูลจากประกาศวันหยุดประจำปี 2569; ตรวจกับประกาศทางราชการอีกครั้งก่อนจัดตาราง). Add next year when announced.
@@ -503,7 +529,7 @@ function switchSheet() {
   }).catch((e) => { s.querySelector(".in").innerHTML = `<p class="err">${/switchable_today|function/.test(errMsg(e)) ? "ระบบเปลี่ยนรถยังไม่เปิดใช้ (รอรัน SQL)" : esc(errMsg(e))}</p>`; });
 }
 function bindHome() {
-  setBell();
+  setBell(); bindPaxDash();
   if ($("swBtn")) $("swBtn").onclick = switchSheet;
   main().querySelectorAll("[data-pa]").forEach((b) => (b.onclick = async () => { b.disabled = true;
     try { await q(sb.from("work_schedules").update({ approval: "approved", note: "ศิริราชแทน (ผู้จัดการมอบหมาย)", updated_at: new Date().toISOString() }).eq("id", b.dataset.pa)); toast("ยืนยันแล้ว"); home(); } catch (e) { b.disabled = false; toast(errMsg(e)); } }));

@@ -493,3 +493,13 @@ table.lv tbody tr[data-chg]{cursor:pointer}table.lv tbody tr[data-chg]:active{ba
 table.lv .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
 table.lv .c{text-align:center}table.lv .chev{color:var(--muted);width:14px}
 table.lv tr.lv-day td{background:rgba(31,194,255,.07);border-top:1px solid var(--line)}
+/* passenger dashboard (home) */
+#paxDash{margin-top:16px}
+.pd-lines{display:grid;grid-template-columns:1fr;gap:8px}
+.pd-line{background:linear-gradient(160deg,#0e2c6e,#0a2257);border:1px solid rgba(31,194,255,.35);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.pd-line b{font-size:1.9rem;line-height:1.15}.pd-line b span{font-size:.9rem;font-weight:500;color:var(--muted);margin-left:6px}
+.pd-line>span{font-size:.84rem}.pd-line small{font-size:.76rem;color:var(--muted)}
+.pd-line .pd-m{margin-top:4px;padding-top:5px;border-top:1px solid rgba(255,255,255,.12)}.pd-line .pd-m b{font-size:1rem;color:var(--blue)}
+.pd-buses{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:.84rem;color:var(--muted)}
+.pd-bus i{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);margin-right:5px}.pd-bus b{color:var(--fg)}
+.pd-lines{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
