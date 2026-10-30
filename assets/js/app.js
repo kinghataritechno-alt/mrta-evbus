@@ -780,9 +780,10 @@ const setRun = (r) => { try { r ? localStorage.setItem(RUNKEY, JSON.stringify(r)
 let CH = { vid: null, blob: null, url: null };
 async function charge() {
   const vs = myVehicles();
-  const recent = await q(sb.from("charging_records").select("*").order("created_at", { ascending: false }).limit(8));
+  const recent = await q(sb.from("charging_records").select("*").order("created_at", { ascending: false }).limit(isMgr() ? 30 : 20));
+  CH.recent = recent; delete main().dataset.ocrWarn;
   CH.pend = await pendingReceipts();
-  if (!vs.length) { main().innerHTML = `${pendHTML(CH.pend)}<div class="empty" style="margin-top:16px"><b>วันนี้ไม่มีรถที่ได้รับมอบหมาย</b>บันทึกการชาร์จได้เมื่อมีรถในตารางงานของคุณ · แนบใบเสร็จย้อนหลังได้ด้านบน</div>${recentHTML(recent)}`; bindPend(); return; }
+  if (!vs.length) { main().innerHTML = `${pendHTML(CH.pend)}<div class="empty" style="margin-top:16px"><b>วันนี้ไม่มีรถที่ได้รับมอบหมาย</b>บันทึกการชาร์จได้เมื่อมีรถในตารางงานของคุณ · แนบใบเสร็จย้อนหลังได้ด้านบน</div>${recentHTML(recent)}`; bindPend(); bindRecent(); return; }
   const run = getRun();
   if (run && !vs.some((v) => v.id === run.vid)) setRun(null);
   CH.vid = getRun()?.vid || CH.vid || vs[0].id;
@@ -805,7 +806,7 @@ function pendHTML(rows) {
 }
 function bindPend() { main().querySelectorAll("[data-attach]").forEach((b) => (b.onclick = () => attachSheet(CH.pend.find((r) => r.id === b.dataset.attach)))); }
 function attachSheet(r) {
-  const s = $("sheet"), v = vById(r.vehicle_id); let blob = null, isPdf = false;
+  const s = $("sheet"), v = vById(r.vehicle_id), g = (id) => s.querySelector("#" + id); let blob = null, isPdf = false; delete s.dataset.ocrWarn;
   s.innerHTML = `<div class="in"><div class="sh"><b>แนบใบเสร็จ · ${v?.code || ""} · ${bk(r.receipt_date)}</b><button class="lnk" id="shX">ปิด</button></div>
     <p class="sm" style="margin:0">ชาร์จเวลา ${r.started_at ? tHM(r.started_at) + "–" + tHM(r.ended_at) + " น." : "–"}${r.soc_before != null ? ` · แบต ${r.soc_before}% → ${r.soc_after}%` : ""} · ${esc(r.station || "")}</p>
     <div id="aPrev"></div>
@@ -822,22 +823,86 @@ function attachSheet(r) {
   const pick = async (e) => { const f = e.target.files[0]; if (!f) return; isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
     if (isPdf) { if (f.size > 10 * 1024 * 1024) { toast("ไฟล์ PDF ใหญ่เกิน 10 MB"); return; } blob = f; } else { blob = await shrink(f, 1600, 0.8); if (!blob) { if (!isHeic(f)) toast("เปิดรูปนี้ไม่ได้ ลองถ่ายภาพใหม่"); return; } }
     $("aPrev").innerHTML = isPdf ? `<div class="card sm">📄 <b>${esc(f.name)}</b> · ${(f.size / 1024).toFixed(0)} KB</div>` : `<img src="${URL.createObjectURL(blob)}" alt="ใบเสร็จ" style="max-width:100%;max-height:260px;display:block;border-radius:10px">`;
-    if (window.ocrFill) window.ocrFill(blob, isPdf, v, "ocrNote"); };
+    if (window.ocrFill) window.ocrFill(blob, isPdf, v, "ocrNote", s, { date: r.receipt_date, start: r.started_at, end: r.ended_at }); };
   $("aRc").onchange = pick; $("aRf").onchange = pick;
-  ["cK", "cSub", "cVat", "cTot"].forEach((id) => ($(id).oninput = (e) => { e.target.value = e.target.value.replace(/[^\d.]/g, ""); chkCharge(); })); chkCharge();
+  ["cK", "cSub", "cVat", "cTot"].forEach((id) => (g(id).oninput = (e) => { e.target.value = e.target.value.replace(/[^\d.]/g, ""); chkCharge(s); })); chkCharge(s);
   $("aSave").onclick = async () => {
-    const err = [], no = $("cNo").value.trim(), k = parseFloat($("cK").value), tot = parseFloat($("cTot").value);
+    const err = [], no = g("cNo").value.trim(), k = parseFloat(g("cK").value), tot = parseFloat(g("cTot").value);
     if (!blob) err.push("ภาพใบเสร็จ"); if (!no) err.push("เลขที่ใบเสร็จ"); if (!(k > 0)) err.push("kWh"); if (!(tot > 0)) err.push("รวมทั้งสิ้น");
     if (err.length) { $("aErr").textContent = "กรุณาตรวจ: " + err.join(", "); $("aErr").hidden = false; return; }
+    if (!ocrGate(s, $("aSave"), (m) => { $("aErr").textContent = m; $("aErr").hidden = false; })) return;
     const b = $("aSave"); b.disabled = true; b.innerHTML = `<span class="spin"></span>กำลังบันทึก…`;
     try {
       const path = await upload(r.vehicle_id, "receipt", blob);
-      await q(sb.rpc("attach_receipt", { p_id: r.id, p_path: path, p_no: no, p_ref: $("cRef").value.trim() || null, p_kwh: k, p_sub: parseFloat($("cSub").value) || null, p_vat: parseFloat($("cVat").value) || null, p_total: tot }));
+      await q(sb.rpc("attach_receipt", { p_id: r.id, p_path: path, p_no: no, p_ref: g("cRef").value.trim() || null, p_kwh: k, p_sub: parseFloat(g("cSub").value) || null, p_vat: parseFloat(g("cVat").value) || null, p_total: tot }));
       s.hidden = true; toast("แนบใบเสร็จแล้ว"); charge();
     } catch (e) { b.disabled = false; b.textContent = "บันทึกใบเสร็จ"; $("aErr").textContent = /attach_receipt|function/.test(errMsg(e)) ? "ระบบแนบใบเสร็จภายหลังยังไม่เปิดใช้ (รอรัน SQL)" : errMsg(e); $("aErr").hidden = false; }
   };
 }
-function recentHTML(rows) { return `<h2>บันทึกล่าสุด <small>${isMgr() ? "ทุกคัน" : "ของคุณ"}</small></h2>` + (rows.length ? `<div class="list">${rows.map((r) => { const v = vById(r.vehicle_id); return `<div class="card" style="border-left:4px solid ${v ? COLOR[v.code] : "var(--line)"}"><div class="row1"><b>${v?.code || "ไม่ระบุรถ"}</b><span class="sm">${bk(r.receipt_date || bkD(r.started_at))}${r.started_at ? " " + tHM(r.started_at) + "–" + tHM(r.ended_at) : ""}</span>${r.receipt_path || r.source !== "app" ? `<span class="pill info num">${fmt(r.total)} บาท</span>` : `<span class="pill warn">รอใบเสร็จ</span>`}</div><div class="sm num">${r.receipt_no ? "ใบเสร็จ " + r.receipt_no + " · " : ""}${r.kwh != null ? fmt(r.kwh, 2) + " kWh" : ""}${r.soc_before != null ? ` · แบต ${r.soc_before}% → ${r.soc_after}%` : ""}${r.source === "import" ? " · นำเข้า" : ""}</div></div>`; }).join("")}</div>` : `<div class="empty">ยังไม่มีบันทึกการชาร์จ</div>`); }
+/* view / edit / delete one charging record · driver: own record until the day after charging · manager: any time (rules enforced in edit_charge / delete_charge) */
+/* receipt reader found a date/time/plate mismatch → the first tap on save only warns; a second tap saves */
+function ocrGate(root, btn, err) { if (root.dataset.ocrWarn !== "1" || btn.dataset.ok === "1") return true; btn.dataset.ok = "1"; err("⚠️ ใบเสร็จไม่ตรงกับการชาร์จนี้ (ดูข้อความสีแดงด้านบน) · ถ้าตรวจแล้วถูกต้อง กดบันทึกอีกครั้งเพื่อยืนยัน"); return false; }
+const canEditCharge = (r) => isMgr() || (r.source === "app" && r.employee_id && r.employee_id === ME.employee?.id && r.receipt_date >= iso(new Date(dObj(today()).getTime() - 864e5)));
+async function chargeEdit(r, after) {
+  const s = $("sheet"), v = vById(r.vehicle_id), g = (id) => s.querySelector("#" + id), can = canEditCharge(r); delete s.dataset.ocrWarn;
+  let blob = null, isPdf = false;
+  const hm = (t) => (t ? tHM(t) : "");
+  const draw = () => {
+    s.innerHTML = `<div class="in"><div class="sh"><b>การชาร์จ ${v?.code || ""} · ${bk(r.receipt_date)}</b><button class="lnk" id="shX">ปิด</button></div>
+      ${can ? `<p class="sm" style="margin:0">${isMgr() ? "ผู้จัดการแก้ไข/ลบได้ทุกเวลา" : `แก้ไข/ลบได้ถึงสิ้นวันที่ ${bk(iso(new Date(dObj(r.receipt_date).getTime() + 864e5)))}`} · ระบบเก็บประวัติการแก้ไขทุกครั้ง</p>` : `<p class="notice" style="margin:0">ดูได้อย่างเดียว · เลยวันถัดไปแล้ว ถ้าข้อมูลผิดให้แจ้งผู้จัดการ</p>`}
+      ${r.receipt_path ? `<button class="btn block" id="eView">${/\.pdf$/i.test(r.receipt_path) ? "📄 เปิดใบเสร็จ (PDF)" : "🧾 ดูรูปใบเสร็จ"}</button>` : `<p class="sm" style="margin:0">ยังไม่มีไฟล์ใบเสร็จ</p>`}
+      <div id="ePrev"></div>
+      ${can ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label class="btn block" style="min-height:52px;border-style:dashed">📷 ${r.receipt_path ? "ถ่ายใบเสร็จใหม่" : "ถ่ายภาพใบเสร็จ"}<input type="file" accept="image/*" capture="environment" id="eRc" hidden></label>
+        <label class="btn block" style="min-height:52px;border-style:dashed">🖼️ ${r.receipt_path ? "เปลี่ยนไฟล์" : "เลือกรูป / PDF"}<input type="file" accept="image/*,application/pdf" id="eRf" hidden></label></div><p id="ocrNote" hidden></p>` : ""}
+      <fieldset ${can ? "" : "disabled"} style="border:0;padding:0;margin:0;min-width:0"><div class="grid">
+        <div class="fld"><label for="eS">เริ่มชาร์จ</label><input id="eS" type="time" value="${hm(r.started_at)}"></div>
+        <div class="fld"><label for="eE">สิ้นสุด</label><input id="eE" type="time" value="${hm(r.ended_at)}"></div>
+        <div class="fld full"><label for="cSt">สถานีชาร์จ</label><input id="cSt" value="${esc(r.station || "")}"></div>
+        <div class="fld"><label for="cA">แบตก่อนชาร์จ (%)</label><input id="cA" class="big num" inputmode="numeric" maxlength="3" value="${r.soc_before ?? ""}"></div>
+        <div class="fld"><label for="cB">แบตหลังชาร์จ (%)</label><input id="cB" class="big num" inputmode="numeric" maxlength="3" value="${r.soc_after ?? ""}"></div>
+        <div class="fld"><label for="cNo">เลขที่ใบเสร็จ</label><input id="cNo" class="num" inputmode="numeric" value="${esc(r.receipt_no || "")}"></div>
+        <div class="fld"><label for="cRef">เลขอ้างอิงการชาร์จ</label><input id="cRef" value="${esc(r.ev_ref || "")}"></div>
+        <div class="fld"><label for="cK">พลังงาน (kWh)</label><input id="cK" class="big num" inputmode="decimal" value="${r.kwh ?? ""}"></div>
+        <div class="fld"><label for="cSub">ค่าไฟก่อน VAT</label><input id="cSub" class="big num" inputmode="decimal" value="${r.subtotal ?? ""}"></div>
+        <div class="fld"><label for="cVat">VAT 7%</label><input id="cVat" class="big num" inputmode="decimal" value="${r.vat ?? ""}"></div>
+        <div class="fld"><label for="cTot">รวมทั้งสิ้น (บาท)</label><input id="cTot" class="big num" inputmode="decimal" value="${r.total ?? ""}"></div></div></fieldset>
+      <p class="sm num" id="cChk" style="margin:0"></p><p class="err" id="eErr" hidden></p>
+      ${can ? `<button class="btn pri block" id="eSave">บันทึกการแก้ไข</button><button class="btn danger block" id="eDel">ลบรายการนี้</button>` : ""}</div>`;
+    s.hidden = false; $("shX").onclick = () => (s.hidden = true);
+    if (g("eView")) g("eView").onclick = async () => { const win = /\.pdf$/i.test(r.receipt_path) ? window.open("", "_blank") : null; const [u] = await signed([r.receipt_path]);
+      if (!u) { if (win) win.close(); toast("เปิดไฟล์ไม่ได้ ลองใหม่อีกครั้ง"); return; } if (win) win.location.href = u; else { $("vImg").src = u; $("viewer").hidden = false; } };
+    chkCharge(s); if (!can) return;
+    ["cA", "cB"].forEach((id) => (g(id).oninput = (e) => (e.target.value = e.target.value.replace(/\D/g, ""))));
+    ["cK", "cSub", "cVat", "cTot"].forEach((id) => (g(id).oninput = (e) => { e.target.value = e.target.value.replace(/[^\d.]/g, ""); chkCharge(s); }));
+    const pick = async (e) => { const f = e.target.files[0]; if (!f) return; isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+      if (isPdf) { if (f.size > 10 * 1024 * 1024) { toast("ไฟล์ PDF ใหญ่เกิน 10 MB"); return; } blob = f; } else { blob = await shrink(f, 1600, 0.8); if (!blob) { if (!isHeic(f)) toast("เปิดรูปนี้ไม่ได้ ลองถ่ายภาพใหม่"); return; } }
+      g("ePrev").innerHTML = isPdf ? `<div class="card sm">📄 ไฟล์ใหม่ <b>${esc(f.name)}</b></div>` : `<img src="${URL.createObjectURL(blob)}" alt="ใบเสร็จใหม่" style="max-width:100%;max-height:240px;display:block;border-radius:10px">`;
+      if (window.ocrFill) window.ocrFill(blob, isPdf, v, "ocrNote", s, { date: r.receipt_date, start: r.started_at, end: r.ended_at }); };
+    g("eRc").onchange = pick; g("eRf").onchange = pick;
+    g("eSave").onclick = async () => {
+      const err = (m) => { g("eErr").textContent = m; g("eErr").hidden = false; };
+      const ts = (hhmm) => (hhmm ? new Date(`${r.receipt_date}T${hhmm}:00+07:00`).toISOString() : null);
+      const st = ts(g("eS").value), en = ts(g("eE").value);
+      if (st && en && en <= st) return err("เวลาสิ้นสุดต้องหลังเวลาเริ่มชาร์จ");
+      if (!ocrGate(s, g("eSave"), err)) return;
+      const b = g("eSave"); b.disabled = true; b.innerHTML = `<span class="spin"></span>กำลังบันทึก…`;
+      try {
+        const path = blob ? await upload(r.vehicle_id, "receipt", blob) : null;
+        await q(sb.rpc("edit_charge", { p_id: r.id, p: { started_at: st, ended_at: en, station: g("cSt").value, soc_before: g("cA").value, soc_after: g("cB").value, receipt_no: g("cNo").value, ev_ref: g("cRef").value, kwh: g("cK").value, subtotal: g("cSub").value, vat: g("cVat").value, total: g("cTot").value, receipt_path: path } }));
+        s.hidden = true; toast("บันทึกการแก้ไขแล้ว"); (after || charge)();
+      } catch (x) { b.disabled = false; b.textContent = "บันทึกการแก้ไข"; err(/edit_charge|function/.test(errMsg(x)) ? "ระบบแก้ไขยังไม่เปิดใช้ (รอรัน SQL)" : errMsg(x)); }
+    };
+    g("eDel").onclick = async (e) => {
+      const b = e.currentTarget; if (b.dataset.c !== "1") { b.dataset.c = "1"; b.textContent = "แตะอีกครั้งเพื่อยืนยันการลบ"; return; }
+      b.disabled = true;
+      try { await q(sb.rpc("delete_charge", { p_id: r.id })); s.hidden = true; toast("ลบรายการแล้ว"); (after || charge)(); }
+      catch (x) { b.disabled = false; b.textContent = "ลบรายการนี้"; g("eErr").textContent = /delete_charge|function/.test(errMsg(x)) ? "ระบบลบยังไม่เปิดใช้ (รอรัน SQL)" : errMsg(x); g("eErr").hidden = false; }
+    };
+  };
+  draw();
+}
+function bindRecent() { main().querySelectorAll("[data-chg]").forEach((c) => (c.onclick = () => { const r = (CH.recent || []).find((x) => x.id === c.dataset.chg); if (r) chargeEdit(r); })); }
+function recentHTML(rows) { return `<h2>บันทึกล่าสุด <small>${isMgr() ? "ทุกคัน" : "ของคุณ"}</small></h2>` + (rows.length ? `<div class="list">${rows.map((r) => { const v = vById(r.vehicle_id); return `<button class="card" data-chg="${r.id}" style="border-left:4px solid ${v ? COLOR[v.code] : "var(--line)"};text-align:left;width:100%;font:inherit;color:inherit;cursor:pointer"><div class="row1"><b>${v?.code || "ไม่ระบุรถ"}</b><span class="sm">${bk(r.receipt_date || bkD(r.started_at))}${r.started_at ? " " + tHM(r.started_at) + "–" + tHM(r.ended_at) : ""}</span>${r.receipt_path || r.source !== "app" ? `<span class="pill info num">${fmt(r.total)} บาท</span>` : `<span class="pill warn">รอใบเสร็จ</span>`}</div><div class="sm num">${r.receipt_no ? "ใบเสร็จ " + r.receipt_no + " · " : ""}${r.kwh != null ? fmt(r.kwh, 2) + " kWh" : ""}${r.soc_before != null ? ` · แบต ${r.soc_before}% → ${r.soc_after}%` : ""}${r.source === "import" ? " · นำเข้า" : ""}</div><div class="sm" style="margin-top:2px;color:var(--blue)">${canEditCharge(r) ? "แตะเพื่อดู / แก้ไข / ลบ ›" : "แตะเพื่อดูรายละเอียด ›"}</div></button>`; }).join("")}</div>` : `<div class="empty">ยังไม่มีบันทึกการชาร์จ</div>`); }
 function drawCharge(vs, recent) {
   const run = getRun(), v = vById(CH.vid);
   main().innerHTML = `${pendHTML(CH.pend || [])}<h2>เลือกรถเพื่อทำการชาร์จไฟฟ้า</h2>${busPicker(vs, CH.vid)}
@@ -862,7 +927,7 @@ function drawCharge(vs, recent) {
    <p class="sm num" id="cChk" style="margin:8px 0 0"></p><p class="err" id="cErr" hidden></p>
    <button class="btn pri block" id="cSave" style="margin-top:12px">บันทึกการชาร์จ</button>`}
    ${recentHTML(recent)}`;
-  bindPend();
+  bindPend(); bindRecent();
   main().querySelectorAll("[data-b]").forEach((b) => (b.onclick = () => { CH.vid = b.dataset.b; const r = getRun(); if (r) { r.vid = CH.vid; setRun(r); } drawCharge(vs, recent); }));
   if (!run) { $("startBtn").onclick = () => { setRun({ vid: CH.vid, start: nowHM(), date: today(), ms: Date.now() }); toast(`เริ่มชาร์จ ${vById(CH.vid).code} เวลา ${nowHM()} น.`); drawCharge(vs, recent); }; return; }
   const tick = () => { const m = Math.round((Date.now() - run.ms) / 60000); const el = $("dur"); if (el) el.textContent = `${Math.floor(m / 60)} ชม. ${m % 60} น.`; }; tick(); clearInterval(drawCharge.t); drawCharge.t = setInterval(tick, 30000);
@@ -876,7 +941,7 @@ function drawCharge(vs, recent) {
     if (CH.url) URL.revokeObjectURL(CH.url);
     CH.blob = blob; CH.pdf = isPdf; CH.name = f.name; CH.url = URL.createObjectURL(blob);
     const keep = readCharge(); drawCharge(vs, recent); writeCharge(keep);
-    if (window.ocrFill) window.ocrFill(blob, isPdf, vById(CH.vid), "ocrNote");
+    if (window.ocrFill) window.ocrFill(blob, isPdf, vById(CH.vid), "ocrNote", main(), { date: today(), start: new Date(getRun().ms).toISOString(), end: new Date().toISOString() });
   };
   $("cRc").onchange = pick; $("cRf").onchange = pick;
   ["cA", "cB"].forEach((id) => ($(id).oninput = (e) => (e.target.value = e.target.value.replace(/\D/g, ""))));
@@ -885,12 +950,13 @@ function drawCharge(vs, recent) {
 }
 function readCharge() { const o = {}; ["cSt", "cA", "cB", "cNo", "cRef", "cK", "cSub", "cVat", "cTot"].forEach((id) => { const el = $(id); if (el) o[id] = el.value; }); return o; }
 function writeCharge(o) { Object.entries(o).forEach(([k, v]) => { const el = $(k); if (el) el.value = v; }); chkCharge(); }
-function chkCharge() {
-  const k = +$("cK").value, s = +$("cSub").value, v = +$("cVat").value, t = +$("cTot").value, L = [];
+function chkCharge(root) {
+  root = root || main(); const g = (id) => root.querySelector("#" + id); if (!g("cK")) return;
+  const k = +g("cK").value, s = +g("cSub").value, v = +g("cVat").value, t = +g("cTot").value, L = [];
   if (k && s) L.push(Math.abs(k * 7.0093 - s) <= 0.05 ? "✓ kWh × 7.0093 ตรงกับค่าไฟก่อน VAT" : `! kWh × 7.0093 = ${fmt(k * 7.0093)} ไม่ตรงกับ ${fmt(s)}`);
   if (s && v) L.push(Math.abs(s * 0.07 - v) <= 0.02 ? "✓ VAT = 7%" : "! VAT ไม่เท่ากับ 7%");
   if (s && t) L.push(Math.abs(s + v - t) <= 0.02 ? "✓ ยอดรวมถูกต้อง" : "! ก่อน VAT + VAT ไม่เท่ากับยอดรวม");
-  $("cChk").textContent = L.join(" · ");
+  g("cChk").textContent = L.join(" · ");
 }
 async function saveCharge(vs) {
   const run = getRun(), o = readCharge(), err = [];
@@ -900,6 +966,7 @@ async function saveCharge(vs) {
   if (CH.blob) { if (!o.cNo.trim()) err.push("เลขที่ใบเสร็จ"); if (!(k > 0)) err.push("kWh"); if (!(tot > 0)) err.push("รวมทั้งสิ้น"); }
   else if ((o.cK && !(k > 0)) || (o.cTot && !(tot > 0))) err.push("kWh / ยอดเงินไม่ถูกต้อง");
   if (err.length) { $("cErr").textContent = "กรุณาตรวจ: " + err.join(", "); $("cErr").hidden = false; return; }
+  if (!ocrGate(main(), $("cSave"), (m) => { $("cErr").textContent = m; $("cErr").hidden = false; })) return;
   const btn = $("cSave"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span>กำลังบันทึก…`;
   try {
     const later = !CH.blob, path = later ? null : await upload(CH.vid, "receipt", CH.blob);
@@ -907,7 +974,7 @@ async function saveCharge(vs) {
     const rec = { vehicle_id: CH.vid, employee_id: ME.employee?.id || null, started_at: startedAt, ended_at: endedAt, station: o.cSt.trim(), soc_before: a, soc_after: b, receipt_no: o.cNo.trim() || null, receipt_date: today(), ev_ref: o.cRef.trim() || null, kwh: k > 0 ? k : null, unit_price: 7.0093, subtotal: parseFloat(o.cSub) || null, vat: parseFloat(o.cVat) || null, total: tot > 0 ? tot : null, receipt_path: path, source: "app" };
     try { await q(sb.from("charging_records").insert(rec)); }
     catch (e) { if (later && /null value|not-null|23502/i.test(errMsg(e) + (e.code || ""))) throw new Error("ตอนนี้ยังต้องแนบใบเสร็จก่อนบันทึก (ระบบแนบภายหลังรอรัน SQL)"); throw e; }
-    setRun(null); CH.blob = null; CH.url = null; CH.pdf = false;
+    setRun(null); CH.blob = null; CH.url = null; CH.pdf = false; delete main().dataset.ocrWarn;
     const v = vById(rec.vehicle_id), endHM = nowHM();
     const text = `${v.code} (${v.plate}) ชาร์จไฟฟ้าเรียบร้อย\n${bk(today())} เวลา ${run.start}–${endHM} น.\nแบต ${a}% → ${b}%${rec.kwh ? ` · ${fmt(k, 2)} kWh` : ""}\n${rec.total ? `ค่าไฟฟ้า ${fmt(tot)} บาท · ` : ""}${later ? "ใบเสร็จ: รอแนบวันถัดไป" : `ใบเสร็จ ${rec.receipt_no}`}\n${rec.station} · ${ME.employee?.name || PROFILE.display_name}`;
     main().innerHTML = `<section style="padding-top:20px;display:flex;flex-direction:column;gap:12px"><span class="pill ok" style="margin:0;align-self:flex-start">✓ บันทึกการชาร์จแล้ว</span>
@@ -1128,8 +1195,9 @@ async function chargeSheet(bus, list, label) {
     <div class="list" style="margin-top:10px">${list.map((r) => `<div class="card"><div class="row1"><b>${bk(r.receipt_date)}${r.started_at ? ` · ${tHM(r.started_at)}–${tHM(r.ended_at)} น.` : ""}</b><span class="pill ok">${fmt(r.amt)} บาท</span></div>
       <p class="sm" style="margin:6px 0 0;line-height:1.7">แบต <b>${r.soc_before ?? "–"}% → ${r.soc_after ?? "–"}%</b> · ${fmt(r.kwh, 2)} kWh${r.subtotal ? ` · ก่อน VAT ${fmt(r.subtotal)} · VAT ${fmt(r.vat)}` : ""}<br>
       ใบเสร็จ <b class="num">${esc(r.receipt_no || "–")}</b>${r.ev_ref ? ` · อ้างอิง ${esc(r.ev_ref)}` : ""}<br>${esc(r.station || "")}${r.employee_id ? ` · บันทึกโดย ${esc(nm(r.employee_id))}` : ""}${r.source !== "app" ? " · นำเข้า" : ""}</p>
-      ${r.receipt_path ? `<button class="btn block" data-rcp="${esc(r.receipt_path)}" style="margin-top:8px">${/\.pdf$/i.test(r.receipt_path) ? "📄 เปิดใบเสร็จ (PDF)" : "🧾 ดูรูปใบเสร็จ"}</button>` : `<p class="sm" style="margin:8px 0 0">ไม่มีไฟล์ใบเสร็จแนบ</p>`}</div>`).join("")}</div></div>`;
+      ${r.receipt_path ? `<button class="btn block" data-rcp="${esc(r.receipt_path)}" style="margin-top:8px">${/\.pdf$/i.test(r.receipt_path) ? "📄 เปิดใบเสร็จ (PDF)" : "🧾 ดูรูปใบเสร็จ"}</button>` : `<p class="sm" style="margin:8px 0 0">ไม่มีไฟล์ใบเสร็จแนบ</p>`}${isMgr() ? `<button class="btn block" data-cedit="${r.id}" style="margin-top:8px">✏️ แก้ไข / ลบ</button>` : ""}</div>`).join("")}</div></div>`;
   s.hidden = false; $("shX").onclick = () => (s.hidden = true);
+  s.querySelectorAll("[data-cedit]").forEach((b) => (b.onclick = () => chargeEdit(list.find((x) => x.id === b.dataset.cedit), () => route())));
   s.querySelectorAll("[data-rcp]").forEach((b) => (b.onclick = async () => {
     const path = b.dataset.rcp, win = /\.pdf$/i.test(path) ? window.open("", "_blank") : null; // open the tab inside the tap (popup blockers)
     const [u] = await signed([path]);

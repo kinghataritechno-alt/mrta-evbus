@@ -6,6 +6,7 @@
   const TJS = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
   const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js", PDFW = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
   const RATE = 7.0093;
+  const TMON = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
   const load = (src) => new Promise((ok, no) => { if (document.querySelector(`script[src="${src}"]`) && (window.Tesseract || window.pdfjsLib)) return ok();
     const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => no(new Error("load")); document.head.appendChild(s); });
   let W = null;
@@ -38,6 +39,12 @@
       for (const a of am) { const v = r2(a * 0.07); if (am.includes(v) && am.includes(r2(a + v))) { o.sub = a; o.vat = v; o.tot = r2(a + v); o.score++; o.money = "triple"; break; } }
     }
     const tm = t.match(/\b([01]\d|2[0-3]):[0-5]\d:[0-5]\d\b/); if (tm) o.time = tm[0];
+    // receipt date: full Thai date (PDF text) / dd/mm/25xx / day + Buddhist year only (photo OCR cannot read Thai month names)
+    const pad = (n) => String(n).padStart(2, "0"), ok = (d, m) => d >= 1 && d <= 31 && m >= 1 && m <= 12;
+    let dm = t.match(new RegExp(`(\\d{1,2})\\s*(${TMON.join("|")})\\s*(25\\d\\d)`));
+    if (dm) { const mo = TMON.indexOf(dm[2]) + 1; if (ok(+dm[1], mo)) o.date = `${+dm[3] - 543}-${pad(mo)}-${pad(dm[1])}`; }
+    if (!o.date && (dm = t.match(/\b(\d{1,2})[\/.\-](\d{1,2})[\/.\-](25\d\d)\b/)) && ok(+dm[1], +dm[2])) o.date = `${+dm[3] - 543}-${pad(dm[2])}-${pad(dm[1])}`;
+    if (!o.date && (dm = t.match(/\b(\d{1,2})\s+[^\d\s]{2,14}\s+(25\d\d)\b/)) && +dm[1] >= 1 && +dm[1] <= 31) { o.day = +dm[1]; o.year = +dm[2] - 543; }
     return o;
   }
   window.parseReceipt = parse;
@@ -74,9 +81,11 @@
 
   /* fill the charge form (ids cNo cRef cK cSub cVat cTot) — only empty fields; mismatches are reported, never overwritten */
   let seq = 0;
-  window.ocrFill = async function (blob, isPdf, vehicle, noteId) {
-    const my = ++seq, note = () => document.getElementById(noteId);
+  window.ocrFill = async function (blob, isPdf, vehicle, noteId, root, ctx) {
+    root = root || document; const byId = (id) => root.querySelector("#" + id);
+    const my = ++seq, note = () => byId(noteId);
     const say = (h, cls) => { const n = note(); if (n) { n.className = "ocrnote " + (cls || ""); n.innerHTML = h; n.hidden = false; } };
+    if (root && root.dataset) delete root.dataset.ocrWarn;
     say(`<span class="spin"></span>กำลังอ่านใบเสร็จ… (ครั้งแรกโหลดตัวอ่านประมาณ 5 MB)`);
     let o;
     try { o = await window.readReceipt(blob, isPdf, (m) => my === seq && say(`<span class="spin"></span>${m}`)); }
@@ -84,20 +93,42 @@
     if (my !== seq) return;
     const F = [["cNo", o.no, "เลขที่ใบเสร็จ"], ["cRef", o.ref, "เลขอ้างอิง"], ["cK", o.kwh != null ? o.kwh.toFixed(4).replace(/0+$/, "").replace(/\.$/, "") : null, "kWh"], ["cSub", o.sub?.toFixed(2), "ค่าไฟก่อน VAT"], ["cVat", o.vat?.toFixed(2), "VAT"], ["cTot", o.tot?.toFixed(2), "รวมทั้งสิ้น"]];
     const got = [], diff = [];
-    F.forEach(([id, v, l]) => { const el = document.getElementById(id); if (!el || v == null) return;
+    F.forEach(([id, v, l]) => { const el = byId(id); if (!el || v == null) return;
       if (!el.value.trim()) { el.value = v; el.classList.add("ocr"); el.addEventListener("input", () => el.classList.remove("ocr"), { once: true }); got.push(l); }
       else if (parseFloat(el.value) !== parseFloat(v) && el.value.trim() !== v) diff.push(`${l}: ช่องนี้ ${esc(el.value)} · ใบเสร็จ ${esc(v)}`); });
-    if (typeof chkCharge === "function") chkCharge();
-    const miss = F.filter(([id, v]) => v == null && !document.getElementById(id)?.value.trim()).map(([, , l]) => l);
+    if (typeof chkCharge === "function") chkCharge(root === document ? undefined : root);
+    const miss = F.filter(([id, v]) => v == null && !byId(id)?.value.trim()).map(([, , l]) => l);
     let h = got.length ? `🔍 ระบบอ่านจากใบเสร็จแล้ว: <b>${got.join(", ")}</b> (ช่องสีฟ้า) · <b>ตรวจให้ตรงกับใบเสร็จก่อนบันทึก</b>` : "🔍 อ่านค่าจากใบเสร็จไม่ได้ · กรอกเอง";
     if (miss.length && got.length) h += `<br>ยังต้องกรอกเอง: ${miss.join(", ")}`;
-    if (o.time) h += `<br>เวลาบนใบเสร็จ ${o.time} น.`;
+    const chk = window.receiptMatch ? window.receiptMatch(o, ctx) : null; // date / time of the receipt vs the charge
+    if (chk) h += `<br>${chk.ok ? "✅" : "⚠️"} ${chk.msg}`; else if (o.time) h += `<br>เวลาบนใบเสร็จ ${o.time} น.`;
     if (diff.length) h += `<br>⚠️ ไม่ตรงกับที่กรอกไว้ — ${diff.join(" · ")}`;
-    let cls = got.length ? "ok" : "warn";
+    let cls = got.length ? "ok" : "warn"; let warn = chk && !chk.ok;
+    if (warn) cls = "bad";
     if (vehicle && o.plate && vehicle.plate && o.plate !== String(vehicle.plate).replace(/\D/g, "")) {
       const ov = (typeof VEH !== "undefined" ? VEH : []).find((v) => String(v.plate).replace(/\D/g, "") === o.plate);
+      warn = true;
       h = `⛔ ใบเสร็จนี้เป็นของรถทะเบียน <b>${o.plate}</b>${ov ? ` (${ov.code})` : ""} ไม่ใช่ ${vehicle.code} (${esc(vehicle.plate)}) · ตรวจว่าแนบใบเสร็จถูกใบหรือไม่<br>` + h; cls = "bad";
     }
+    if (warn && root && root.dataset) root.dataset.ocrWarn = "1";
     say(h, cls);
+  };
+  /* receipt date/time vs charge: date = charge day (time inside start−30 min … end+90 min) · next day is accepted as the issue date */
+  window.receiptMatch = function (o, ctx) {
+    if (!ctx || !ctx.date || !(o.date || o.day)) return null;
+    const d0 = ctx.date, d1 = (() => { const [y, m, d] = d0.split("-").map(Number), x = new Date(Date.UTC(y, m - 1, d + 1)); return x.toISOString().slice(0, 10); })();
+    const same = (d) => (o.date ? o.date === d : +d.slice(8) === o.day && +d.slice(0, 4) === o.year);
+    const th = (d) => (typeof bk === "function" ? bk(d) : d), hm = (x) => (x ? new Date(x).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Bangkok" }) : "–");
+    const rd = o.date ? th(o.date) : `วันที่ ${o.day} ปี ${o.year + 543}`, cw = `ชาร์จ ${th(d0)} ${hm(ctx.start)}–${hm(ctx.end)} น.`;
+    if (same(d0)) {
+      if (o.time && ctx.start) {
+        const t = new Date(`${d0}T${o.time}+07:00`).getTime(), a = new Date(ctx.start).getTime() - 30 * 6e4, b = new Date(ctx.end || ctx.start).getTime() + 90 * 6e4;
+        if (t < a || t > b) return { ok: false, msg: `เวลาบนใบเสร็จ <b>${o.time.slice(0, 5)} น.</b> ไม่ตรงกับเวลาชาร์จ (${cw}) · ตรวจว่าแนบใบเสร็จถูกครั้งหรือไม่` };
+        return { ok: true, msg: `วันที่และเวลาบนใบเสร็จตรงกับการชาร์จ (ใบเสร็จ ${rd} ${o.time.slice(0, 5)} น. · ${cw})` };
+      }
+      return { ok: true, msg: `วันที่บนใบเสร็จตรงกับวันที่ชาร์จ (${rd}) · อ่านเวลาไม่ได้ ตรวจเวลาเอง` };
+    }
+    if (same(d1)) return { ok: true, msg: `ใบเสร็จลงวันที่ถัดจากวันชาร์จ (${rd}) · ${cw} · ตรวจว่าเป็นการชาร์จครั้งเดียวกัน` };
+    return { ok: false, msg: `วันที่บนใบเสร็จ <b>${rd}</b> ไม่ตรงกับวันที่ชาร์จ (${cw}) · ตรวจว่าแนบใบเสร็จถูกใบหรือไม่` };
   };
 })();
