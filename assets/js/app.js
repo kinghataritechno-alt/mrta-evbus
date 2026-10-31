@@ -1031,9 +1031,12 @@ function drawCharge(vs, recent) {
   main().innerHTML = `${CH.dash || ""}${pendHTML(CH.pend || [])}<h2>เลือกรถเพื่อทำการชาร์จไฟฟ้า</h2>${busPicker(vs, CH.vid)}
    ${!run ? `<button class="btn go block" id="startBtn" style="margin-top:14px">${ic('<path d="M13 3 6 13h5l-1 8 7-10h-5z"/>')}เริ่มดำเนินการชาร์จ</button>` : `
    <section class="run" style="margin-top:14px"><div><span class="live"></span><b>กำลังชาร์จ ${v.code}</b></div>
-    <dl class="rt num"><div><dt>เริ่มชาร์จ</dt><dd>${run.start} น.</dd></div><div><dt>สิ้นสุด</dt><dd>เมื่อกดบันทึก</dd></div><div><dt>ใช้เวลา</dt><dd id="dur">–</dd></div></dl>
+    <dl class="rt num"><div><dt>เริ่มชาร์จ</dt><dd>${run.date && run.date !== today() ? bk(run.date) + " " : ""}${run.start} น.</dd></div><div><dt>สิ้นสุด</dt><dd>เมื่อกดบันทึก</dd></div><div><dt>ใช้เวลา</dt><dd id="dur">–</dd></div></dl>
     <div class="row1"><span class="sm" style="flex:1">เวลาสิ้นสุดบันทึกอัตโนมัติเมื่อกด "บันทึกการชาร์จ"</span><button class="lnk" id="cancelRun">ยกเลิก</button></div></section>
    <div class="grid" style="margin-top:12px"><div class="fld full"><label for="cSt">สถานีชาร์จ</label><input id="cSt" value="สถานีอัดประจุ กฟน. (MEA)"></div>
+    <div class="fld"><label for="cS">เวลาเริ่มชาร์จจริง${run.date && run.date !== today() ? ` (${bk(run.date)})` : ""}</label><input id="cS" type="time" class="big num" value="${run.start}"></div>
+    <div class="fld"><label for="cE">เวลาชาร์จเสร็จจริง <small>(ว่าง = ตอนกดบันทึก)</small></label><input id="cE" type="time" class="big num"></div>
+    <p class="sm full" style="margin:0">ตรวจเวลาก่อนบันทึก ถ้ากดเริ่มช้าหรือลืมกดหยุด ให้แก้เป็นเวลาที่เสียบสายและถอดสายจริง</p>
     <div class="fld"><label for="cA">แบตก่อนชาร์จ (%)</label><input id="cA" class="big num" inputmode="numeric" maxlength="3"></div>
     <div class="fld"><label for="cB">แบตหลังชาร์จ (%)</label><input id="cB" class="big num" inputmode="numeric" maxlength="3"></div></div>
    <h2>ใบเสร็จการชาร์จ <small>แนบภายหลังได้ (ได้ใบเสร็จวันถัดไป)</small></h2>
@@ -1064,14 +1067,14 @@ function drawCharge(vs, recent) {
     if (CH.url) URL.revokeObjectURL(CH.url);
     CH.blob = blob; CH.pdf = isPdf; CH.name = f.name; CH.url = URL.createObjectURL(blob);
     const keep = readCharge(); drawCharge(vs, recent); writeCharge(keep);
-    if (window.ocrFill) window.ocrFill(blob, isPdf, vById(CH.vid), "ocrNote", main(), { date: today(), start: new Date(getRun().ms).toISOString(), end: new Date().toISOString() });
+    if (window.ocrFill) window.ocrFill(blob, isPdf, vById(CH.vid), "ocrNote", main(), { date: today(), start: (() => { const r = getRun(), h = $("cS")?.value || r.start; return new Date(`${r.date || today()}T${h}:00+07:00`).toISOString(); })(), end: ($("cE")?.value ? new Date(`${today()}T${$("cE").value}:00+07:00`) : new Date()).toISOString() });
   };
   $("cRc").onchange = pick; $("cRf").onchange = pick;
   ["cA", "cB"].forEach((id) => ($(id).oninput = (e) => (e.target.value = e.target.value.replace(/\D/g, ""))));
   ["cK", "cSub", "cVat", "cTot"].forEach((id) => ($(id).oninput = (e) => { e.target.value = e.target.value.replace(/[^\d.]/g, ""); chkCharge(); }));
   $("cSave").onclick = () => saveCharge(vs);
 }
-function readCharge() { const o = {}; ["cSt", "cA", "cB", "cNo", "cRef", "cK", "cSub", "cVat", "cTot"].forEach((id) => { const el = $(id); if (el) o[id] = el.value; }); return o; }
+function readCharge() { const o = {}; ["cSt", "cS", "cE", "cA", "cB", "cNo", "cRef", "cK", "cSub", "cVat", "cTot"].forEach((id) => { const el = $(id); if (el) o[id] = el.value; }); return o; }
 function writeCharge(o) { Object.entries(o).forEach(([k, v]) => { const el = $(k); if (el) el.value = v; }); chkCharge(); }
 function chkCharge(root) {
   root = root || main(); const g = (id) => root.querySelector("#" + id); if (!g("cK")) return;
@@ -1089,20 +1092,30 @@ async function saveCharge(vs) {
   if (o.cNo.trim() && !/^\d{12}$/.test(o.cNo.trim())) err.push("เลขที่ใบเสร็จต้องเป็นตัวเลข 12 หลัก");
   if (CH.blob) { if (!o.cNo.trim()) err.push("เลขที่ใบเสร็จ"); if (!(k > 0)) err.push("kWh"); if (!(tot > 0)) err.push("รวมทั้งสิ้น"); }
   else if ((o.cK && !(k > 0)) || (o.cTot && !(tot > 0))) err.push("kWh / ยอดเงินไม่ถูกต้อง");
+  // เวลาชาร์จจริง: แก้ได้ก่อนบันทึก (คนขับมักกดเริ่มตอนชาร์จเสร็จ หรือลืมกดหยุด · ตรวจ 31 ต.ค. 2569)
+  const sHM = o.cS || run.start, eHM = o.cE || nowHM();
+  const stD = new Date(`${run.date || today()}T${sHM}:00+07:00`), enD = new Date(`${today()}T${eHM}:00+07:00`), mins = Math.round((enD - stD) / 60000);
+  if (!(mins > 0)) err.push("เวลาชาร์จเสร็จต้องหลังเวลาเริ่มชาร์จ");
   if (err.length) { $("cErr").textContent = "กรุณาตรวจ: " + err.join(", "); $("cErr").hidden = false; return; }
+  const sv = $("cSave");
+  if ((mins > 180 || mins < 10) && sv.dataset.tok !== "1") {
+    sv.dataset.tok = "1"; ["cS", "cE"].forEach((id) => { const el = $(id); el.style.borderColor = "var(--warn)"; el.oninput = () => { delete sv.dataset.tok; }; });
+    $("cErr").textContent = `⚠️ เวลาชาร์จ ${sHM}–${eHM} น. รวม ${Math.floor(mins / 60) ? Math.floor(mins / 60) + " ชม. " : ""}${mins % 60} นาที ${mins > 180 ? "นานผิดปกติ (ลืมกดหยุดหรือไม่?)" : "สั้นผิดปกติ (กดเริ่มตอนชาร์จเสร็จหรือไม่?)"} — แก้เวลาเริ่ม/เสร็จให้ตรงกับที่ชาร์จจริง แล้วกดบันทึกอีกครั้ง · ถ้าเวลาถูกแล้ว กดบันทึกซ้ำได้เลย`;
+    $("cErr").hidden = false; return;
+  }
   if (!ocrGate(main(), $("cSave"), (m) => { $("cErr").textContent = m; $("cErr").hidden = false; })) return;
   const btn = $("cSave"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span>กำลังบันทึก…`;
   try {
     const later = !CH.blob, path = later ? null : await upload(CH.vid, "receipt", CH.blob);
-    const startedAt = new Date(run.ms).toISOString(), endedAt = new Date().toISOString();
+    const startedAt = stD.toISOString(), endedAt = enD.toISOString();
     const rec = { vehicle_id: CH.vid, employee_id: ME.employee?.id || null, started_at: startedAt, ended_at: endedAt, station: o.cSt.trim(), soc_before: a, soc_after: b, receipt_no: o.cNo.trim() || null, receipt_date: today(), ev_ref: o.cRef.trim() || null, kwh: k > 0 ? k : null, unit_price: 7.0093, subtotal: parseFloat(o.cSub) || null, vat: parseFloat(o.cVat) || null, total: tot > 0 ? tot : null, receipt_path: path, source: "app" };
     try { await q(sb.from("charging_records").insert(rec)); }
     catch (e) { if (later && /null value|not-null|23502/i.test(errMsg(e) + (e.code || ""))) throw new Error("ตอนนี้ยังต้องแนบใบเสร็จก่อนบันทึก (ระบบแนบภายหลังรอรัน SQL)"); throw e; }
     setRun(null); CH.blob = null; CH.url = null; CH.pdf = false; delete main().dataset.ocrWarn; CD.m = null;
-    const v = vById(rec.vehicle_id), endHM = nowHM();
-    const text = `${v.code} (${v.plate}) ชาร์จไฟฟ้าเรียบร้อย\n${bk(today())} เวลา ${run.start}–${endHM} น.\nแบต ${a}% → ${b}%${rec.kwh ? ` · ${fmt(k, 2)} kWh` : ""}\n${rec.total ? `ค่าไฟฟ้า ${fmt(tot)} บาท · ` : ""}${later ? "ใบเสร็จ: รอแนบวันถัดไป" : `ใบเสร็จ ${rec.receipt_no}`}\n${rec.station} · ${ME.employee?.name || PROFILE.display_name}`;
+    const v = vById(rec.vehicle_id), endHM = eHM;
+    const text = `${v.code} (${v.plate}) ชาร์จไฟฟ้าเรียบร้อย\n${bk(today())} เวลา ${sHM}–${endHM} น.\nแบต ${a}% → ${b}%${rec.kwh ? ` · ${fmt(k, 2)} kWh` : ""}\n${rec.total ? `ค่าไฟฟ้า ${fmt(tot)} บาท · ` : ""}${later ? "ใบเสร็จ: รอแนบวันถัดไป" : `ใบเสร็จ ${rec.receipt_no}`}\n${rec.station} · ${ME.employee?.name || PROFILE.display_name}`;
     main().innerHTML = `<section style="padding-top:20px;display:flex;flex-direction:column;gap:12px"><span class="pill ok" style="margin:0;align-self:flex-start">✓ บันทึกการชาร์จแล้ว</span>
-     <div class="sum" style="grid-template-columns:1fr 1fr"><div class="tile"><small>เวลาชาร์จ</small><b class="num">${run.start}–${endHM}</b></div><div class="tile"><small>แบตเตอรี่</small><b class="num">${a}% → ${b}%</b></div><div class="tile"><small>พลังงาน</small><b class="num">${rec.kwh ? fmt(k, 2) + " kWh" : "รอใบเสร็จ"}</b></div><div class="tile"><small>ค่าไฟรวม VAT</small><b class="num">${rec.total ? fmt(tot) : "รอใบเสร็จ"}</b></div></div>
+     <div class="sum" style="grid-template-columns:1fr 1fr"><div class="tile"><small>เวลาชาร์จ</small><b class="num">${sHM}–${endHM}</b></div><div class="tile"><small>แบตเตอรี่</small><b class="num">${a}% → ${b}%</b></div><div class="tile"><small>พลังงาน</small><b class="num">${rec.kwh ? fmt(k, 2) + " kWh" : "รอใบเสร็จ"}</b></div><div class="tile"><small>ค่าไฟรวม VAT</small><b class="num">${rec.total ? fmt(tot) : "รอใบเสร็จ"}</b></div></div>
      ${later ? `<p class="notice">บันทึกแล้ว · รอแนบใบเสร็จ — เมื่อได้ใบเสร็จวันถัดไป เปิดเมนูบันทึกการชาร์จ แล้วกด "แนบใบเสร็จ"</p>` : ""}
      <div class="card"><pre style="margin:0;white-space:pre-wrap;font:inherit;line-height:1.6">${esc(text)}</pre></div>
      ${lineBtn(text)}<button class="btn block" id="cp">คัดลอกข้อความ</button><a class="btn block" href="#home">กลับหน้าหลัก</a><button class="lnk" id="again">เริ่มบันทึกการชาร์จครั้งถัดไป</button></section>`;
