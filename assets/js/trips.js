@@ -9,9 +9,11 @@ const TRIP_PAT = {
   "ว715": "07:15C 08:00R 10:20R 11:00C 11:30R 12:00C 12:30R 13:30C 14:00R 15:00C 17:05R 18:10C 19:20R", // จ.–ศ. STC-04 (เดิม GRN กลุ่มสีเขียว)
   "สว730": "07:30C 08:00R 09:30C 10:00R 11:30C 12:00R 13:30C 14:00R 15:30C 16:00R 17:30C 18:10R", // ส.–อา./นักขัตฤกษ์ สายหลักคันที่ 1 (เดิม SA)
   "สร730": "07:30R 08:30C 09:00R 10:30C 11:00R 12:30C 13:00R 14:30C 15:00R 16:30C 17:00R 18:30C", // ส.–อา./นักขัตฤกษ์ สายหลักคันที่ 2 (เดิม SB)
-  "ศ830": "08:30HQ 11:00MRT 13:00MRT", // STC-03 ศิริราช ทุกวัน 3 เที่ยว (เดิม R2)
+  "ศ830": "08:30HQ 11:00MRT 13:00MRT", // จ.–ศ. STC-03 ศิริราช 3 เที่ยว (เดิม R2)
+  "สศ830": "08:30HQ 11:00MRT 13:00MRT 18:30R", // ส.–อา./นักขัตฤกษ์ STC-03 ศิริราช 3 เที่ยว + 18:30 สถานี รฟม. → ศูนย์ฯ (เพิ่ม 31 ต.ค. 2569)
 };
-const QC_SIRIRAJ = "ศ830"; // รหัสคิวสายศิริราช
+const isSirirajQ = (qc) => qc === "ศ830" || qc === "สศ830"; // คิวของรถสายศิริราช (STC-03)
+const isSirirajTrip = (t) => !!t && (t.origin === ORIGIN.HQ || t.origin === ORIGIN.MRT); // เที่ยวนี้วิ่งเส้นศิริราชหรือไม่ (ดูจากต้นทาง)
 const tripsOf = (qc) => (TRIP_PAT[qc] || "").split(" ").filter(Boolean).map((s, i) => ({ no: i + 1, time: s.slice(0, 5), origin: ORIGIN[s.slice(5)] }));
 const LATE_MIN = 5; // บันทึกหลังเวลาออกเกินกี่นาทีถือว่าช้า
 const minsOf = (hm) => { const [h, m] = String(hm).slice(0, 5).split(":").map(Number); return h * 60 + m; };
@@ -41,7 +43,7 @@ async function tripPage() {
   const extra = logs.filter((l) => !plan.some((t) => t.time === String(l.scheduled_time).slice(0, 5) && t.origin === l.origin));
   main().innerHTML = `${isMgr() || role() === "CUSTOMER" ? `<div class="grid"><div class="fld"><label for="tDate">วันที่</label><input type="date" id="tDate" value="${TRIP.date}"></div></div>` : ""}
    ${busPicker(vs, TRIP.vid, "data-tv")}
-   <section class="sum"><div class="tile"><small>ตามแผน</small><b class="num">${plan.length || "–"}</b><span>เที่ยว</span></div><div class="tile"><small>รายงานแล้ว</small><b class="num">${nDone}</b><span>${qq?.queue_code === QC_SIRIRAJ ? "รอบ" : "เที่ยว"}</span></div><div class="tile ${plan.length - nDone > 0 && now === 9999 ? "alert" : ""}"><small>ยังไม่รายงาน</small><b class="num">${Math.max(0, plan.length - nDone)}</b><span>${qq?.queue_code === QC_SIRIRAJ ? "รอบ" : "เที่ยว"}</span></div></section>
+   <section class="sum"><div class="tile"><small>ตามแผน</small><b class="num">${plan.length || "–"}</b><span>เที่ยว</span></div><div class="tile"><small>รายงานแล้ว</small><b class="num">${nDone}</b><span>${isSirirajQ(qq?.queue_code) ? "รอบ" : "เที่ยว"}</span></div><div class="tile ${plan.length - nDone > 0 && now === 9999 ? "alert" : ""}"><small>ยังไม่รายงาน</small><b class="num">${Math.max(0, plan.length - nDone)}</b><span>${isSirirajQ(qq?.queue_code) ? "รอบ" : "เที่ยว"}</span></div></section>
    ${qq ? `<p class="sm" style="margin:8px 0 0">${v.code} · คิว ${esc(qq.queue_code)} · ${ROUTE[v.route_code] || ""} · ${bk(TRIP.date)}${paxDay ? ` · ผู้โดยสารขึ้นวันนี้ <b>${paxDay}</b> คน` : ""}</p>` : `<div class="empty" style="margin-top:12px"><b>${v.code} ไม่มีคิววันนี้</b>รถจอดหรือยังไม่ได้จัดตาราง</div>`}
    <div class="list" style="margin-top:8px">${plan.map((t, i) => { const l = done(t), late = l && minsOf(bkkHM(l.taken_at)) > minsOf(t.time) + LATE_MIN;
      return `<button class="day trip ${i === nextIdx ? "today" : ""}" data-trip="${i}" style="text-align:left;cursor:pointer;border-left:4px solid ${l ? (late ? "#ffb347" : "#3fa725") : i === nextIdx ? "#1fc2ff" : "transparent"}">
@@ -56,7 +58,7 @@ async function tripPage() {
 }
 
 function lineText(v, qq, t, note) {
-  const isR2 = qq.queue_code === QC_SIRIRAJ;
+  const isR2 = isSirirajTrip(t);
   // same layout the LINE group already uses: bus / สแตนด์บายรับออก / รอบ 09.40 น. <pick-up point> 📍
   const place = t.origin === ORIGIN.C ? P_CC : t.origin === ORIGIN.R ? P_LOT : t.origin;
   const head = isR2 ? `${v.code}\nสแตนด์บายรับออก เที่ยวที่ ${t.no}\nเวลา ${t.time.replace(":", ".")} น. ${t.origin} 📍\n${ROUTE.R2}` : `${v.code}\nสแตนด์บายรับออก\nรอบ ${t.time.replace(":", ".")} น. ${place} 📍`;
@@ -111,7 +113,7 @@ async function saveTrip(v, qq, t, status) {
     const note = ($("tNote")?.value || "").trim() || null;
     const path = TRIP.blob ? await upload(v.id, "trip", TRIP.blob, t.no) : null;
     const emp = isMgr() ? (await q(sb.from("work_schedules").select("employee_id").eq("work_date", TRIP.date).eq("vehicle_id", v.id).eq("status", "work")))[0]?.employee_id || null : ME.employee?.id;
-    const row = { work_date: TRIP.date, vehicle_id: v.id, employee_id: emp, route_code: v.route_code || (qq.queue_code === QC_SIRIRAJ ? "R2" : "R1"), queue_code: qq.queue_code, trip_no: t.no, scheduled_time: t.time, origin: t.origin, status, note, taken_at: new Date().toISOString() };
+    const row = { work_date: TRIP.date, vehicle_id: v.id, employee_id: emp, route_code: isSirirajTrip(t) ? "R2" : "R1", queue_code: qq.queue_code, trip_no: t.no, scheduled_time: t.time, origin: t.origin, status, note, taken_at: new Date().toISOString() };
     if (path) row.photo_path = path;
     await q(sb.from("trip_logs").upsert(row, { onConflict: "vehicle_id,work_date,scheduled_time,origin" }));
     $("sheet").hidden = true;
@@ -153,7 +155,7 @@ async function tripReport() {
     const ok = plan.filter((t) => L.some((l) => l.status === "standby" && l.photo_path && String(l.scheduled_time).slice(0, 5) === t.time && l.origin === t.origin));
     const late = ok.filter((t) => { const l = L.find((x) => x.photo_path && String(x.scheduled_time).slice(0, 5) === t.time && x.origin === t.origin); return minsOf(bkkHM(l.taken_at)) > minsOf(t.time) + LATE_MIN; });
     const can = L.filter((l) => l.status === "cancelled").length;
-    return { plan: plan.length, ok: ok.length, late: late.length, can, r2: qq.queue_code === QC_SIRIRAJ };
+    return { plan: plan.length, ok: ok.length, late: late.length, can, r2: isSirirajQ(qq.queue_code) };
   };
   const G = days.map((d) => cars.map((c) => cell(d, c)));
   const sumC = cars.map((c, j) => G.reduce((s, r) => { const x = r[j]; if (x) { s.plan += x.plan; s.ok += x.ok; s.late += x.late; s.can += x.can; s.days++; } return s; }, { plan: 0, ok: 0, late: 0, can: 0, days: 0 }));
@@ -225,7 +227,7 @@ const R2_STOPS = {
   3: ["MRT อิสรภาพ", "ตรงข้ามวัดอรุณราชวราราม", "ตรงข้าม รพ.ศิริราช", "ซอยอรุณอมรินทร์ 53 (ลุมพินีคอนโด)", "หอพักเจ้าพระยา (ศิริราช)", "รพ.ศิริราช (วงเวียน)", "ตรงข้าม The Most อิสรภาพ", "ตรงข้าม dBura อิสรภาพ", "MRT อิสรภาพ"],
 };
 // ศูนย์ฯ → อาคาร 2 → อาคาร 1 → ลานจอด รฟม. · ลานจอด รฟม. → อาคาร 2 → อาคาร 1 → ศูนย์ฯ (ตามแบบฟอร์มเดิม)
-const stopsOf = (qc, t) => qc === QC_SIRIRAJ ? R2_STOPS[t.no] || [] : t.origin === ORIGIN.C ? [P_CC, P_B2, P_B1, P_LOT] : [P_LOT, P_B2, P_B1, P_CC];
+const stopsOf = (qc, t) => isSirirajTrip(t) ? R2_STOPS[t.no] || [] : t.origin === ORIGIN.C ? [P_CC, P_B2, P_B1, P_LOT] : [P_LOT, P_B2, P_B1, P_CC];
 const SKEY = "mrta-trip-stops", QKEY = "mrta-stop-queue";
 const lsGet = (k) => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
@@ -235,7 +237,7 @@ async function ensureLog(v, qq, t) {
   const ex = await tl(sb.from("trip_logs").select("id").eq("work_date", TRIP.date).eq("vehicle_id", v.id).eq("scheduled_time", t.time).eq("origin", t.origin));
   if (ex[0]) return ex[0].id;
   const emp = isMgr() ? (await q(sb.from("work_schedules").select("employee_id").eq("work_date", TRIP.date).eq("vehicle_id", v.id).eq("status", "work")))[0]?.employee_id || null : ME.employee?.id;
-  const row = { work_date: TRIP.date, vehicle_id: v.id, employee_id: emp, route_code: v.route_code || (qq.queue_code === QC_SIRIRAJ ? "R2" : "R1"), queue_code: qq.queue_code, trip_no: t.no, scheduled_time: t.time, origin: t.origin, status: "standby", note: "บันทึกผู้โดยสาร (ยังไม่ถ่ายรูปรับออก)" };
+  const row = { work_date: TRIP.date, vehicle_id: v.id, employee_id: emp, route_code: isSirirajTrip(t) ? "R2" : "R1", queue_code: qq.queue_code, trip_no: t.no, scheduled_time: t.time, origin: t.origin, status: "standby", note: "บันทึกผู้โดยสาร (ยังไม่ถ่ายรูปรับออก)" };
   const r = await q(sb.from("trip_logs").insert(row).select("id").single());
   return r.id;
 }
@@ -411,7 +413,7 @@ async function dayTripPdf(d) {
     const pct = (o, p) => (p ? Math.round((o / p) * 100) : 0);
     // passengers by stop / direction and by time slot (same trip_stops rows → totals match)
     const byStop = {}, slot = { am: 0, off: 0, pm: 0 };
-    stops.forEach((x) => { const l = logs.find((y) => y.id === x.trip_log_id); if (!l) return; const dir = l.queue_code === QC_SIRIRAJ ? "R2" : l.origin === ORIGIN.C ? "CC" : "LOT", k = dir + "|" + (dir === "R2" ? "MRT อิสรภาพ – รพ.ศิริราช (ทุกจุด)" : x.stop);
+    stops.forEach((x) => { const l = logs.find((y) => y.id === x.trip_log_id); if (!l) return; const dir = isSirirajTrip(l) ? "R2" : l.origin === ORIGIN.C ? "CC" : "LOT", k = dir + "|" + (dir === "R2" ? "MRT อิสรภาพ – รพ.ศิริราช (ทุกจุด)" : x.stop);
       byStop[k] = byStop[k] || { b: 0, a: 0 }; byStop[k].b += x.board; byStop[k].a += x.alight; if (dir !== "R2") slot[SLOT(String(l.scheduled_time).slice(0, 5))] += x.board; });
     const stopRows = Object.entries(byStop).filter(([, n]) => n.b || n.a).sort((x, y) => { const a = STOP_ORD.indexOf(x[0]), b = STOP_ORD.indexOf(y[0]); return (a < 0 ? 99 : a) - (b < 0 ? 99 : b); })
       .map(([k, n]) => { const [dr, st] = k.split("|"); return `<tr><td>${{ CC: "ศูนย์ฯ → รฟม.", LOT: "รฟม. → ศูนย์ฯ", R2: "ศิริราช" }[dr]}</td><td>${esc(st)}</td><td class="r">${n.b}</td><td class="r">${n.a}</td></tr>`; }).join("");
@@ -495,7 +497,7 @@ async function paxStats(a, b) {
   const LG = Object.fromEntries(L.map((l) => [l.id, l])), code = (id) => vcode(id);
   const byDay = {}, byStop = {}, bySlot = { am: 0, off: 0, pm: 0 }, byTime = {}, byCar = {};
   S.forEach((s) => {
-    const l = LG[s.trip_log_id]; if (!l) return; const c = code(s.vehicle_id), t = String(l.scheduled_time).slice(0, 5), dir = l.queue_code === QC_SIRIRAJ ? "R2" : l.origin === ORIGIN.C ? "CC" : "LOT";
+    const l = LG[s.trip_log_id]; if (!l) return; const c = code(s.vehicle_id), t = String(l.scheduled_time).slice(0, 5), dir = isSirirajTrip(l) ? "R2" : l.origin === ORIGIN.C ? "CC" : "LOT";
     byDay[s.work_date] = byDay[s.work_date] || {}; byDay[s.work_date][c] = (byDay[s.work_date][c] || 0) + s.board;
     const k = dir + "|" + s.stop; byStop[k] = (byStop[k] || 0) + s.board;
     if (dir !== "R2") { bySlot[SLOT(t)] += s.board; byTime[t] = byTime[t] || {}; byTime[t][c] = (byTime[t][c] || 0) + s.board; }

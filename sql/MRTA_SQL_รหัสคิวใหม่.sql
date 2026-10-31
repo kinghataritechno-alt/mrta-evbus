@@ -28,3 +28,9 @@ end $$;
 commit;
 
 select queue_code, count(*) as trips, min(dep_time) as first_trip from public.queue_patterns group by 1 order by 1;
+
+-- เพิ่ม 31 ต.ค. 2569 12:15: วันหยุด STC-03 วิ่งเที่ยว 18:30 สถานี รฟม. → ศูนย์วัฒนธรรมฯ เพิ่ม (คำขอผู้ใช้) → รหัส สศ830 (4 เที่ยว)
+insert into public.queue_patterns (queue_code, trip_no, dep_time, origin) values
+ ('สศ830',1,'08:30','รฟม. สำนักงานใหญ่'),('สศ830',2,'11:00','MRT อิสรภาพ'),('สศ830',3,'13:00','MRT อิสรภาพ'),('สศ830',4,'18:30','สถานี รฟม.')
+on conflict do nothing;
+-- วันหยุดในตาราง (31 ต.ค., 1, 7, 8, 14, 15, 21, 22, 28, 29 พ.ย.): STC-03 ศ830 → สศ830, planned_trips 4 (vehicle_queue + work_schedules)

@@ -420,11 +420,11 @@ const PD = { day: null };
 async function paxDashHTML() {
   PD.day = PD.day || today();
   const d = dObj(PD.day), m0 = iso(new Date(d.getFullYear(), d.getMonth(), 1));
-  const rows = []; for (let i = 0; i < 40000; i += 1000) { const { data, error } = await sb.from("trip_stops").select("vehicle_id,work_date,trip_log_id,board").gte("work_date", m0).lte("work_date", PD.day).range(i, i + 999); if (error) return ""; rows.push(...(data || [])); if (!data || data.length < 1000) break; }
-  const lineOf = (vid) => (vById(vid)?.route_code === "R2" ? "R2" : "R1");
+  const rows = []; for (let i = 0; i < 40000; i += 1000) { const { data, error } = await sb.from("trip_stops").select("vehicle_id,work_date,trip_log_id,board,stop").gte("work_date", m0).lte("work_date", PD.day).range(i, i + 999); if (error) return ""; rows.push(...(data || [])); if (!data || data.length < 1000) break; }
+  const MAIN = new Set([P_CC, P_LOT, P_B2, P_B1]), lineOf = (x) => (MAIN.has(x.stop) || vById(x.vehicle_id)?.route_code !== "R2" ? "R1" : "R2"); // ตามจุดจอด: เที่ยว 18:30 ของ STC-03 วันหยุดนับเป็นสายหลัก
   const day = rows.filter((x) => x.work_date === PD.day), sum = (l) => l.reduce((t, x) => t + (x.board || 0), 0), trips = (l) => new Set(l.map((x) => x.trip_log_id)).size;
   const nDays = new Set(rows.map((x) => x.work_date)).size || 1;
-  const line = (ln, name, sub) => { const l = day.filter((x) => lineOf(x.vehicle_id) === ln), m = rows.filter((x) => lineOf(x.vehicle_id) === ln), n = sum(l), t = trips(l);
+  const line = (ln, name, sub) => { const l = day.filter((x) => lineOf(x) === ln), m = rows.filter((x) => lineOf(x) === ln), n = sum(l), t = trips(l);
     return `<div class="pd-line"><small>${name}</small><b class="num">${n.toLocaleString("th-TH")}<span>คน</span></b><span class="num">${t} เที่ยวที่บันทึก${t ? ` · เฉลี่ย ${(n / t).toFixed(1)} คน/เที่ยว` : ""}</span>
       <span class="pd-m num">สะสมเดือนนี้ <b>${sum(m).toLocaleString("th-TH")}</b> คน · เฉลี่ย ${Math.round(sum(m) / nDays).toLocaleString("th-TH")} คน/วัน</span><small>${sub}</small></div>`; };
   const bus = VEH.map((v) => { const n = sum(day.filter((x) => x.vehicle_id === v.id)); return `<span class="pd-bus" style="--c:${SCOL[v.code]}"><i></i>${v.code} <b class="num">${n.toLocaleString("th-TH")}</b></span>`; }).join("");

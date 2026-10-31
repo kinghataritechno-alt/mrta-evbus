@@ -130,14 +130,14 @@
   /* ---------- สรุปปัญหาประจำวัน (Dashboard): 1) เที่ยวล่าช้าของวัน 2) ยอดสะสมของเดือน 3) ปัญหาอื่น ๆ ----------
      ล่าช้า = ถ่ายรูปรายงานหลังเวลาออกตามตารางเกิน LATE_MIN นาที (เกณฑ์เดียวกับรายงานรอบเดินรถ) · ไม่รายงาน = เลยเวลาออก 15 นาทีแล้วไม่มีรูป/ไม่ยกเลิก */
   const R2_11_FROM = "2026-10-30"; // 11:00 MRT อิสรภาพ เป็นเที่ยวแยกตั้งแต่วันนี้
-  const dirOf = (qc, o) => qc === QC_SIRIRAJ ? (o === ORIGIN.HQ ? "ศิริราช: รฟม.สนญ. → MRT อิสรภาพ" : "ศิริราช: MRT อิสรภาพ วนรอบ") : o === ORIGIN.C ? "ขา ศูนย์ฯ → สถานี รฟม." : "ขา สถานี รฟม. → ศูนย์ฯ";
+  const dirOf = (qc, o) => isSirirajTrip({ origin: o }) ? (o === ORIGIN.HQ ? "ศิริราช: รฟม.สนญ. → MRT อิสรภาพ" : "ศิริราช: MRT อิสรภาพ วนรอบ") : o === ORIGIN.C ? "ขา ศูนย์ฯ → สถานี รฟม." : "ขา สถานี รฟม. → ศูนย์ฯ";
   async function pageAll(build) { const out = []; for (let i = 0; i < 40000; i += 1000) { const { data, error } = await build().range(i, i + 999); if (error) throw error; out.push(...(data || [])); if (!data || data.length < 1000) break; } return out; }
   function tripStatus(days, queues, logs, nowD, nowM) {
     const res = [];
     queues.forEach((qq) => {
       if (!days.includes(qq.work_date)) return;
       tripsOf(qq.queue_code).forEach((t) => {
-        if (qq.queue_code === QC_SIRIRAJ && t.time === "11:00" && qq.work_date < R2_11_FROM) return;
+        if (isSirirajQ(qq.queue_code) && t.time === "11:00" && qq.work_date < R2_11_FROM) return;
         const l = logs.find((x) => x.vehicle_id === qq.vehicle_id && x.work_date === qq.work_date && String(x.scheduled_time).slice(0, 5) === t.time && x.origin === t.origin);
         const due = qq.work_date < nowD || (qq.work_date === nowD && minsOf(t.time) + 15 <= nowM);
         let st = "wait", late = 0;
