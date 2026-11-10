@@ -503,3 +503,16 @@ table.lv tr.lv-day td{background:rgba(31,194,255,.07);border-top:1px solid var(-
 .pd-buses{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:.84rem;color:var(--muted)}
 .pd-bus i{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);margin-right:5px}.pd-bus b{color:var(--fg)}
 .pd-lines{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+/* ใบสำคัญจ่าย AC-FM-007 (landscape) */
+.doc .dpg.pv{padding:30px 40px;color:#000;font-size:12.5px}
+.doc .pv-top{display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:12px}
+.doc .pv-title{text-align:center;display:flex;flex-direction:column;gap:2px;padding-top:16px}.doc .pv-title b{font-size:20px}.doc .pv-title span{font-size:13px}
+.doc .pv-doc{justify-self:end;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.doc .pv-doc table{border-collapse:collapse;font-size:10.5px}.doc .pv-doc td{border:1px solid #000;padding:1px 6px}
+.doc .pv-money{display:grid;gap:3px;font-size:12px}.doc .pv-money div{display:flex;gap:8px;justify-content:flex-end;align-items:baseline}.doc .pv-money b{min-width:110px;border-bottom:1px solid #000;text-align:right;display:inline-block}
+.doc .pv-who{display:flex;gap:26px;margin:12px 0 8px;font-size:13px}.doc .pv-who u{text-decoration:none;border-bottom:1px dotted #000;padding:0 10px;min-width:60px;display:inline-block;font-weight:600}
+.doc .pv-t{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}.doc .pv-t th,.doc .pv-t td{border:1px solid #000;padding:3px 5px;height:24px;overflow:hidden}
+.doc .pv-t th{font-weight:600;font-size:10.5px;line-height:1.25;text-align:center;vertical-align:middle;background:#f3f3f3;padding:4px 2px;white-space:normal;height:38px}.doc .pv-t td.c{text-align:center}.doc .pv-t td.r{text-align:right}
+.doc .pv-t .pv-tot td{background:#fafafa}
+.doc .pv-sgs{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:30px;font-size:12px;text-align:center}.doc .pv-sg div+div{margin-top:6px}
+.doc .pv-note{font-size:10px;color:#333;margin:14px 0 0}

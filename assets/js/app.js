@@ -1274,7 +1274,7 @@ async function report() {
   const noRc = R.filter((r) => r.source === "app" && !r.receipt_path);
   main().innerHTML = `${noRc.length ? `<p class="notice" style="margin-bottom:10px">รอแนบใบเสร็จ <b>${noRc.length}</b> รายการ (ยอดเงินยังไม่รวมในรายงานจนกว่าจะแนบ) · แนบได้ที่เมนูบันทึกการชาร์จ</p>` : ""}<a class="btn block" href="#tripreport" style="margin-bottom:10px">รายงานรอบเดินรถประจำเดือน →</a><a class="btn block" href="#agent" style="margin-bottom:10px"><img class="tf-ic" src="assets/img/smartai-96.png?v=2" alt="">Manager Agent สรุปการบันทึกรายวัน →</a><div class="tabs2"><button id="rW" aria-selected="${rpMode === "week"}">เลือกช่วงวันที่</button><button id="rM" aria-selected="${rpMode === "month"}">รายเดือน</button></div>
    ${rpMode === "week" ? `<div class="grid" style="margin-top:12px"><div class="fld"><label for="rA">ตั้งแต่วันที่</label><input type="date" id="rA" value="${rpA}"></div><div class="fld"><label for="rB">ถึงวันที่</label><input type="date" id="rB" value="${rpB}"></div></div><p class="sm" style="margin:6px 0 0">ช่วงที่เลือก ${label}</p>` : `<div class="wk"><button id="rPrev" aria-label="เดือนก่อน">‹</button><div>${label}<small>สรุปค่าไฟฟ้าประจำเดือน · 1 – ${new Date(rpStart.getFullYear(), rpStart.getMonth() + 1, 0).getDate()} ${MS[rpStart.getMonth()]}</small></div><button id="rNext" aria-label="เดือนถัดไป">›</button></div>`}
-   ${R.length ? `<button class="btn pri block" id="rPdf" style="margin-top:12px">📄 รายงาน PDF ค่าไฟฟ้า ${label}</button><section class="hero"><small>ค่าไฟฟ้ารวม (รวม VAT)</small><div class="big num">${fmt(T)}<span>บาท</span></div><div class="kpis num"><div><b>${fmt(K, 2)}</b><span>kWh</span></div><div><b>${R.length}</b><span>ครั้งที่ชาร์จ</span></div><div><b>${K ? fmt(T / K) : "–"}</b><span>บาท/kWh</span></div></div></section>
+   ${R.length ? `<button class="btn pri block" id="rPdf" style="margin-top:12px">📄 รายงาน PDF ค่าไฟฟ้า ${label}</button><button class="btn block" id="rVc" style="margin-top:8px">🧾 ใบสำคัญจ่าย (ปกนำ) + รายงานค่าไฟฟ้า</button><section class="hero"><small>ค่าไฟฟ้ารวม (รวม VAT)</small><div class="big num">${fmt(T)}<span>บาท</span></div><div class="kpis num"><div><b>${fmt(K, 2)}</b><span>kWh</span></div><div><b>${R.length}</b><span>ครั้งที่ชาร์จ</span></div><div><b>${K ? fmt(T / K) : "–"}</b><span>บาท/kWh</span></div></div></section>
    <h2>ค่าไฟฟ้ารายวันแยกรายคัน <small>บาท · แตะกราฟเพื่อดูยอด</small></h2><section class="card"><div class="legend" id="rcLeg"></div><div class="chart" id="rc"></div></section>
    <h2>แยกรายคัน</h2><section class="card">${buses.map((x) => { const l = R.filter((r) => r.bus === x), aa = sum(l, (r) => r.amt), mx = Math.max(...buses.map((y) => sum(R.filter((r) => r.bus === y), (r) => r.amt))); return `<button class="busrow" data-bus="${x}" style="--c:${SCOL[x]};width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);color:inherit;font:inherit;cursor:pointer"><div class="n"><i></i>${x} ›</div><div><div class="fill" style="width:${(aa / mx) * 100}%"></div><div class="v num"><span><b>${fmt(aa)}</b> บาท</span><span>${l.length} ครั้ง</span><span>${fmt(sum(l, (r) => r.kwh), 1)} kWh</span><span>${fmt(sum(l, (r) => r.kwh) / l.length, 1)} kWh/ครั้ง</span></div></div></button>`; }).join("")}<p class="sm" style="margin:6px 0 0">แตะชื่อรถเพื่อดูรายละเอียดการชาร์จและใบเสร็จ</p></section>
    ${R.some((r) => r.bus === "ไม่ระบุ") ? `<h2>ต้องตรวจสอบ</h2><p class="notice">ใบเสร็จไม่ระบุทะเบียน ${R.filter((r) => r.bus === "ไม่ระบุ").length} ใบ รวม ${fmt(sum(R.filter((r) => r.bus === "ไม่ระบุ"), (r) => r.amt))} บาท ยังแยกไม่ได้ว่าเป็นรถคันไหน</p>` : ""}
@@ -1288,6 +1288,7 @@ async function report() {
   main().querySelectorAll("[data-bus]").forEach((b) => (b.onclick = () => chargeSheet(b.dataset.bus, R.filter((r) => r.bus === b.dataset.bus), label)));
   main().querySelectorAll("[data-rec]").forEach((tr) => (tr.onclick = () => { const r = R.find((x) => x.id === tr.dataset.rec); chargeSheet(r.bus, [r], bk(r.receipt_date)); }));
   $("rPdf").onclick = () => chargePdf(R, a, b, label);
+  $("rVc").onclick = () => voucherSheet(R, a, b, label);
   $("rCopy").onclick = () => copyText(`สรุปค่าไฟฟ้า MRTA Shuttle Bus ${label}\n` + buses.map((x) => { const l = R.filter((r) => r.bus === x); return `${x}: ${l.length} ครั้ง ${fmt(sum(l, (r) => r.kwh), 1)} kWh ${fmt(sum(l, (r) => r.amt))} บาท`; }).join("\n") + `\nรวม ${R.length} ครั้ง ${fmt(K, 1)} kWh ${fmt(T)} บาท · แนบใบเสร็จ ${R.length} ใบ`);
   // line chart: one line per bus (all four always shown; "ไม่ระบุ" only when such receipts exist)
   const LB = ["STC-01", "STC-02", "STC-03", "STC-04"].concat(R.some((r) => r.bus === "ไม่ระบุ") ? ["ไม่ระบุ"] : []);
@@ -1323,8 +1324,8 @@ async function report() {
 }
 
 /* ---------- PDF: charging (electricity) report for any date range · A4 portrait · page 1 summary, then the receipt list ---------- */
-async function chargePdf(R, a, b, label) {
-  const btn = $("rPdf"), txt = btn.textContent;
+async function chargePdf(R, a, b, label, vc) {
+  const btn = $(vc ? "rVc" : "rPdf"), txt = btn.textContent;
   if (!window.html2pdf) { toast("โหลดตัวสร้าง PDF ไม่ได้ ตรวจสอบอินเทอร์เน็ต"); return; }
   btn.disabled = true; btn.innerHTML = `<span class="spin"></span> กำลังสร้างรายงาน…`;
   let stage = null;
@@ -1356,16 +1357,64 @@ async function chargePdf(R, a, b, label) {
     const of = 1 + chunks.length;
     const lhead = `<thead><tr><th class="c">#</th><th>วันที่</th><th>เวลาชาร์จ</th><th>รถ</th><th>เลขที่ใบเสร็จ</th><th>ผู้บันทึก</th><th class="r">แบต</th><th class="r">kWh</th><th class="r">บาท</th></tr></thead>`;
     const pages = [summary(1, of, chunks.length === 0)].concat(chunks.map((c, i) => `${head(i + 2, of)}<h2>รายการชาร์จและใบเสร็จ ${i ? "(ต่อ)" : ""}</h2><table class="dst">${lhead}<tbody>${c.join("")}${i === chunks.length - 1 ? `<tr><td colspan="7"><b>รวม ${R.length} รายการ</b></td><td class="r"><b>${fmt(K, 2)}</b></td><td class="r"><b>${fmt(T)}</b></td></tr>` : ""}</tbody></table>${i === chunks.length - 1 ? dSign(["ผู้จัดทำ", "ผู้ตรวจสอบ", "ผู้อนุมัติ"]) : ""}${foot(i + 2, of)}`));
-    const W = 794, H = 1123, fname = `MRTA_charging_${a}_${b}.pdf`;
+    const W = 794, H = 1123, fname = vc ? `MRTA_payment_voucher_${a}_${b}.pdf` : `MRTA_charging_${a}_${b}.pdf`;
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
-    stage = document.createElement("div"); stage.style.cssText = `position:fixed;left:-20000px;top:0;width:${W}px;background:#fff`;
-    stage.innerHTML = `<div class="doc" style="width:${W}px">${pages.map((pg) => `<section class="dpg" style="width:${W}px;height:${H}px;margin:0;box-shadow:none">${pg}</section>`).join("")}</div>`;
+    // voucher (landscape, accounting form AC-FM-007) first, then the report pages (portrait) unless "voucher only"
+    const parts = (vc ? [{ html: voucherPage(R, vc), land: true }] : []).concat(vc && vc.only ? [] : pages.map((html) => ({ html, land: false })));
+    stage = document.createElement("div"); stage.style.cssText = `position:fixed;left:-20000px;top:0;width:1123px;background:#fff`;
+    stage.innerHTML = parts.map((pt) => `<div class="doc" style="width:${pt.land ? 1123 : W}px"><section class="dpg${pt.land ? " pv" : ""}" style="width:${pt.land ? 1123 : W}px;height:${pt.land ? 794 : H}px;margin:0;box-shadow:none">${pt.html}</section></div>`).join("");
     document.body.appendChild(stage);
-    const blob = await html2pdf().set({ margin: 0, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: Math.max(W, window.innerWidth), scrollX: 0, scrollY: 0 },
-      jsPDF: { unit: "px", format: [W, H], orientation: "portrait", hotfixes: ["px_scaling"] }, pagebreak: { mode: [] } }).from(stage.firstElementChild).outputPdf("blob");
-    pdfReady(blob, fname, `รายงานค่าไฟฟ้า ${label}`);
+    const els = [...stage.children];
+    let wk = null;
+    parts.forEach((pt, i) => {
+      const w = pt.land ? 1123 : W, h = pt.land ? 794 : H, ori = pt.land ? "landscape" : "portrait";
+      const opt = { margin: 0, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: Math.max(w, window.innerWidth), scrollX: 0, scrollY: 0 }, jsPDF: { unit: "px", format: [w, h], orientation: ori, hotfixes: ["px_scaling"] }, pagebreak: { mode: [] } };
+      wk = i === 0 ? html2pdf().set(opt).from(els[i]).toPdf() : wk.set(opt).get("pdf").then((pdf) => pdf.addPage([w, h], ori)).from(els[i]).toContainer().toCanvas().toPdf();
+    });
+    const blob = await wk.outputPdf("blob");
+    pdfReady(blob, fname, vc ? `ใบสำคัญจ่าย + รายงานค่าไฟฟ้า ${label}` : `รายงานค่าไฟฟ้า ${label}`);
   } catch (e) { toast("สร้างรายงานไม่สำเร็จ: " + errMsg(e)); }
-  finally { if (stage) stage.remove(); if ($("rPdf")) { $("rPdf").disabled = false; $("rPdf").textContent = txt; } }
+  finally { if (stage) stage.remove(); if (btn) { btn.disabled = false; btn.textContent = txt; } }
+}
+/* ---------- ใบสำคัญจ่าย (AC-FM-007) — cover sheet for the petty-cash (เงินทดรองจ่าย) claim of charging costs ----------
+   one row per work day: charges started before 05:00 belong to the previous work day (night charging) · amounts = receipt totals incl. VAT */
+const VC_CUT = 5 * 60; // minutes after midnight
+const vcDay = (r) => { const d = r.receipt_date; if (!r.started_at || minsOf(tHM(r.started_at)) >= VC_CUT) return d; return iso(new Date(dObj(d).getTime() - 864e5)); };
+function voucherDays(R) {
+  const m = {}; R.filter((r) => Number(r.amt) > 0).forEach((r) => { const d = vcDay(r); m[d] = (m[d] || 0) + Number(r.amt); });
+  return Object.keys(m).sort().map((d) => ({ d, amt: Math.round(m[d] * 100) / 100 }));
+}
+function voucherPage(R, vc) {
+  const days = voucherDays(R), tot = Math.round(days.reduce((x, r) => x + r.amt, 0) * 100) / 100;
+  const dmy = (d) => { const x = dObj(d); return `${x.getDate()}/${x.getMonth() + 1}/${String(x.getFullYear() + 543).slice(2)}`; };
+  const thai = (d) => { const x = dObj(d); return `${x.getDate()} ${MS[x.getMonth()]} ${String(x.getFullYear() + 543).slice(2)}`; };
+  const adv = vc.adv > 0 ? vc.adv : null, diff = adv != null ? Math.round((adv - tot) * 100) / 100 : null;
+  const N = Math.max(15, days.length), cols = ["คชจ.ยานพาหนะ", "คชจ.เดินทาง", "ค่าเลี้ยงรับรอง", "คชจ.เบ็ดเตล็ด", "คชจ.อื่นๆ", "ภาษีซื้อ", "ภาษีหัก ณ ที่จ่าย"];
+  const rows = Array.from({ length: N }, (_, i) => { const r = days[i]; return `<tr><td class="c">${r ? dmy(r.d) : ""}</td><td>${r ? `ค่าชาร์จไฟรถบัส ${VEH.length} คัน` : ""}</td>${cols.map(() => "<td></td>").join("")}<td class="r">${r ? fmt(r.amt) : ""}</td></tr>`; }).join("");
+  const sg = (role) => `<div class="pv-sg"><div>ลงชื่อ ........................................ ${role}</div><div>( ........................................ )</div></div>`;
+  return `<div class="pv-top"><div></div><div class="pv-title"><b>ใบสำคัญจ่าย</b><span>บริษัท สมาร์ท เทอร์มินอล คอร์ปอเรชั่น จำกัด</span></div>
+      <div class="pv-doc"><table><tr><td>หมายเลขเอกสาร</td><td>AC-FM-007</td></tr><tr><td>แก้ไขครั้งที่</td><td>0</td></tr><tr><td>วันที่บังคับใช้</td><td>1/8/2561</td></tr></table>
+        <div class="pv-money"><div><span>เงินทดรองจ่าย</span><b>${adv != null ? fmt(adv) : ""}</b></div><div><span>จ่ายทั้งสิ้น</span><b>${fmt(tot)}</b></div><div><span>คืนเงินบริษัท/(บริษัทจ่ายเพิ่ม)</span><b>${diff == null ? "" : diff >= 0 ? fmt(diff) : `(${fmt(-diff)})`}</b></div></div></div></div>
+    <div class="pv-who"><span>ชื่อ <u>${esc(vc.name || "")}</u></span><span>โครงการ <u>${esc(vc.proj || "")}</u></span><span>ตั้งแต่ <u>${days.length ? thai(days[0].d) : ""}</u></span><span>ถึง <u>${days.length ? thai(days[days.length - 1].d) : ""}</u></span></div>
+    <table class="pv-t"><thead><tr><th style="width:78px">วัน/เดือน/ปี</th><th>รายการ</th>${cols.map((c) => `<th style="width:80px">${c.replace("คชจ.", "คชจ.<br>").replace("ค่าเลี้ยง", "ค่าเลี้ยง<br>").replace("ภาษีหัก ณ", "ภาษีหัก ณ<br>")}</th>`).join("")}<th style="width:96px">รวมเงิน</th></tr></thead>
+      <tbody>${rows}<tr class="pv-tot"><td colspan="9" class="r"><b>รวมทั้งสิ้น</b></td><td class="r"><b>${fmt(tot)}</b></td></tr></tbody></table>
+    <div class="pv-sgs">${sg("ผู้เบิก")}${sg("ผู้อนุมัติ")}${sg("ผู้จ่าย")}${sg("ผู้รับ")}</div>
+    <p class="pv-note">แนบ: รายงานค่าไฟฟ้าการชาร์จรถโดยสารไฟฟ้า MRTA Shuttle Bus พร้อมรายการใบเสร็จ · ยอดรวม VAT ตามใบเสร็จ · การชาร์จหลังเที่ยงคืนถึง 05:00 น. นับรวมกับวันทำงานก่อนหน้า</p>`;
+}
+function voucherSheet(R, a, b, label) {
+  const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k) || ""; localStorage.setItem(k, v); } catch (e) { return ""; } };
+  const days = voucherDays(R), tot = days.reduce((x, r) => x + r.amt, 0), wait = R.filter((r) => r.source === "app" && !r.receipt_path).length;
+  const s = $("sheet");
+  s.innerHTML = `<div class="in"><div class="sh"><b>ใบสำคัญจ่าย (ปกนำ) · ${esc(label)}</b><button class="lnk" id="shX">ปิด</button></div>
+    <p class="sm" style="margin:0">${days.length} วัน · จ่ายทั้งสิ้น <b class="num">${fmt(tot)}</b> บาท${wait ? ` · <span style="color:var(--warn)">รอแนบใบเสร็จ ${wait} รายการ (ยังไม่รวมในยอด)</span>` : ""}</p>
+    <div class="grid"><div class="fld full"><label for="vcN">ชื่อผู้เบิก</label><input id="vcN" value="${esc(ls("vc_name"))}" placeholder="ชื่อ-นามสกุล"></div>
+      <div class="fld"><label for="vcP">โครงการ</label><input id="vcP" value="${esc(ls("vc_proj") || "118")}"></div>
+      <div class="fld"><label for="vcA">เงินทดรองจ่าย (บาท) ถ้ามี</label><input id="vcA" class="num" inputmode="decimal" placeholder="เว้นว่างได้"></div></div>
+    <label class="sm" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="vcOnly"> ใบสำคัญจ่ายอย่างเดียว (ไม่แนบรายงานค่าไฟฟ้าต่อท้าย)</label>
+    <button class="btn pri block" id="vcGo">สร้าง PDF ใบสำคัญจ่าย</button></div>`;
+  s.hidden = false; $("shX").onclick = () => (s.hidden = true);
+  $("vcGo").onclick = () => { const vc = { name: $("vcN").value.trim(), proj: $("vcP").value.trim(), adv: parseFloat(String($("vcA").value).replace(/,/g, "")) || 0, only: $("vcOnly").checked };
+    ls("vc_name", vc.name); ls("vc_proj", vc.proj); s.hidden = true; chargePdf(R, a, b, label, vc); };
 }
 /* charging details per vehicle (managers/admin): every charge with times, battery, kWh, amount, driver and the receipt file */
 async function chargeSheet(bus, list, label) {
