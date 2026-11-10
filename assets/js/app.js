@@ -1274,7 +1274,7 @@ async function report() {
   const noRc = R.filter((r) => r.source === "app" && !r.receipt_path);
   main().innerHTML = `${noRc.length ? `<p class="notice" style="margin-bottom:10px">รอแนบใบเสร็จ <b>${noRc.length}</b> รายการ (ยอดเงินยังไม่รวมในรายงานจนกว่าจะแนบ) · แนบได้ที่เมนูบันทึกการชาร์จ</p>` : ""}<a class="btn block" href="#tripreport" style="margin-bottom:10px">รายงานรอบเดินรถประจำเดือน →</a><a class="btn block" href="#agent" style="margin-bottom:10px"><img class="tf-ic" src="assets/img/smartai-96.png?v=2" alt="">Manager Agent สรุปการบันทึกรายวัน →</a><div class="tabs2"><button id="rW" aria-selected="${rpMode === "week"}">เลือกช่วงวันที่</button><button id="rM" aria-selected="${rpMode === "month"}">รายเดือน</button></div>
    ${rpMode === "week" ? `<div class="grid" style="margin-top:12px"><div class="fld"><label for="rA">ตั้งแต่วันที่</label><input type="date" id="rA" value="${rpA}"></div><div class="fld"><label for="rB">ถึงวันที่</label><input type="date" id="rB" value="${rpB}"></div></div><p class="sm" style="margin:6px 0 0">ช่วงที่เลือก ${label}</p>` : `<div class="wk"><button id="rPrev" aria-label="เดือนก่อน">‹</button><div>${label}<small>สรุปค่าไฟฟ้าประจำเดือน · 1 – ${new Date(rpStart.getFullYear(), rpStart.getMonth() + 1, 0).getDate()} ${MS[rpStart.getMonth()]}</small></div><button id="rNext" aria-label="เดือนถัดไป">›</button></div>`}
-   ${R.length ? `<button class="btn pri block" id="rPdf" style="margin-top:12px">📄 รายงาน PDF ค่าไฟฟ้า ${label}</button><button class="btn block" id="rVc" style="margin-top:8px">🧾 ใบสำคัญจ่าย (ปกนำ) + รายงานค่าไฟฟ้า</button><section class="hero"><small>ค่าไฟฟ้ารวม (รวม VAT)</small><div class="big num">${fmt(T)}<span>บาท</span></div><div class="kpis num"><div><b>${fmt(K, 2)}</b><span>kWh</span></div><div><b>${R.length}</b><span>ครั้งที่ชาร์จ</span></div><div><b>${K ? fmt(T / K) : "–"}</b><span>บาท/kWh</span></div></div></section>
+   ${R.length ? `<button class="btn pri block" id="rPdf" style="margin-top:12px">📄 รายงาน PDF ค่าไฟฟ้า + ใบสำคัญจ่าย ${label}</button><section class="hero"><small>ค่าไฟฟ้ารวม (รวม VAT)</small><div class="big num">${fmt(T)}<span>บาท</span></div><div class="kpis num"><div><b>${fmt(K, 2)}</b><span>kWh</span></div><div><b>${R.length}</b><span>ครั้งที่ชาร์จ</span></div><div><b>${K ? fmt(T / K) : "–"}</b><span>บาท/kWh</span></div></div></section>
    <h2>ค่าไฟฟ้ารายวันแยกรายคัน <small>บาท · แตะกราฟเพื่อดูยอด</small></h2><section class="card"><div class="legend" id="rcLeg"></div><div class="chart" id="rc"></div></section>
    <h2>แยกรายคัน</h2><section class="card">${buses.map((x) => { const l = R.filter((r) => r.bus === x), aa = sum(l, (r) => r.amt), mx = Math.max(...buses.map((y) => sum(R.filter((r) => r.bus === y), (r) => r.amt))); return `<button class="busrow" data-bus="${x}" style="--c:${SCOL[x]};width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);color:inherit;font:inherit;cursor:pointer"><div class="n"><i></i>${x} ›</div><div><div class="fill" style="width:${(aa / mx) * 100}%"></div><div class="v num"><span><b>${fmt(aa)}</b> บาท</span><span>${l.length} ครั้ง</span><span>${fmt(sum(l, (r) => r.kwh), 1)} kWh</span><span>${fmt(sum(l, (r) => r.kwh) / l.length, 1)} kWh/ครั้ง</span></div></div></button>`; }).join("")}<p class="sm" style="margin:6px 0 0">แตะชื่อรถเพื่อดูรายละเอียดการชาร์จและใบเสร็จ</p></section>
    ${R.some((r) => r.bus === "ไม่ระบุ") ? `<h2>ต้องตรวจสอบ</h2><p class="notice">ใบเสร็จไม่ระบุทะเบียน ${R.filter((r) => r.bus === "ไม่ระบุ").length} ใบ รวม ${fmt(sum(R.filter((r) => r.bus === "ไม่ระบุ"), (r) => r.amt))} บาท ยังแยกไม่ได้ว่าเป็นรถคันไหน</p>` : ""}
@@ -1287,8 +1287,7 @@ async function report() {
   if (!R.length) return;
   main().querySelectorAll("[data-bus]").forEach((b) => (b.onclick = () => chargeSheet(b.dataset.bus, R.filter((r) => r.bus === b.dataset.bus), label)));
   main().querySelectorAll("[data-rec]").forEach((tr) => (tr.onclick = () => { const r = R.find((x) => x.id === tr.dataset.rec); chargeSheet(r.bus, [r], bk(r.receipt_date)); }));
-  $("rPdf").onclick = () => chargePdf(R, a, b, label);
-  $("rVc").onclick = () => voucherSheet(R, a, b, label);
+  $("rPdf").onclick = () => voucherSheet(R, a, b, label); // every charging report PDF starts with the ใบสำคัญจ่าย cover
   $("rCopy").onclick = () => copyText(`สรุปค่าไฟฟ้า MRTA Shuttle Bus ${label}\n` + buses.map((x) => { const l = R.filter((r) => r.bus === x); return `${x}: ${l.length} ครั้ง ${fmt(sum(l, (r) => r.kwh), 1)} kWh ${fmt(sum(l, (r) => r.amt))} บาท`; }).join("\n") + `\nรวม ${R.length} ครั้ง ${fmt(K, 1)} kWh ${fmt(T)} บาท · แนบใบเสร็จ ${R.length} ใบ`);
   // line chart: one line per bus (all four always shown; "ไม่ระบุ" only when such receipts exist)
   const LB = ["STC-01", "STC-02", "STC-03", "STC-04"].concat(R.some((r) => r.bus === "ไม่ระบุ") ? ["ไม่ระบุ"] : []);
@@ -1325,7 +1324,7 @@ async function report() {
 
 /* ---------- PDF: charging (electricity) report for any date range · A4 portrait · page 1 summary, then the receipt list ---------- */
 async function chargePdf(R, a, b, label, vc) {
-  const btn = $(vc ? "rVc" : "rPdf"), txt = btn.textContent;
+  const btn = $("rPdf"), txt = btn.textContent;
   if (!window.html2pdf) { toast("โหลดตัวสร้าง PDF ไม่ได้ ตรวจสอบอินเทอร์เน็ต"); return; }
   btn.disabled = true; btn.innerHTML = `<span class="spin"></span> กำลังสร้างรายงาน…`;
   let stage = null;
@@ -1405,15 +1404,15 @@ function voucherSheet(R, a, b, label) {
   const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k) || ""; localStorage.setItem(k, v); } catch (e) { return ""; } };
   const days = voucherDays(R), tot = days.reduce((x, r) => x + r.amt, 0), wait = R.filter((r) => r.source === "app" && !r.receipt_path).length;
   const s = $("sheet");
-  s.innerHTML = `<div class="in"><div class="sh"><b>ใบสำคัญจ่าย (ปกนำ) · ${esc(label)}</b><button class="lnk" id="shX">ปิด</button></div>
+  s.innerHTML = `<div class="in"><div class="sh"><b>รายงาน PDF ค่าไฟฟ้า + ใบสำคัญจ่าย · ${esc(label)}</b><button class="lnk" id="shX">ปิด</button></div>
     <p class="sm" style="margin:0">${days.length} วัน · จ่ายทั้งสิ้น <b class="num">${fmt(tot)}</b> บาท${wait ? ` · <span style="color:var(--warn)">รอแนบใบเสร็จ ${wait} รายการ (ยังไม่รวมในยอด)</span>` : ""}</p>
     <div class="grid"><div class="fld full"><label for="vcN">ชื่อผู้เบิก</label><input id="vcN" value="${esc(ls("vc_name"))}" placeholder="ชื่อ-นามสกุล"></div>
       <div class="fld"><label for="vcP">โครงการ</label><input id="vcP" value="${esc(ls("vc_proj") || "118")}"></div>
       <div class="fld"><label for="vcA">เงินทดรองจ่าย (บาท) ถ้ามี</label><input id="vcA" class="num" inputmode="decimal" placeholder="เว้นว่างได้"></div></div>
-    <label class="sm" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="vcOnly"> ใบสำคัญจ่ายอย่างเดียว (ไม่แนบรายงานค่าไฟฟ้าต่อท้าย)</label>
-    <button class="btn pri block" id="vcGo">สร้าง PDF ใบสำคัญจ่าย</button></div>`;
+    <p class="sm" style="margin:0">PDF = ใบสำคัญจ่าย (หน้า 1) + รายงานค่าไฟฟ้าและรายการใบเสร็จ</p>
+    <button class="btn pri block" id="vcGo">สร้าง PDF</button></div>`;
   s.hidden = false; $("shX").onclick = () => (s.hidden = true);
-  $("vcGo").onclick = () => { const vc = { name: $("vcN").value.trim(), proj: $("vcP").value.trim(), adv: parseFloat(String($("vcA").value).replace(/,/g, "")) || 0, only: $("vcOnly").checked };
+  $("vcGo").onclick = () => { const vc = { name: $("vcN").value.trim(), proj: $("vcP").value.trim(), adv: parseFloat(String($("vcA").value).replace(/,/g, "")) || 0, only: false };
     ls("vc_name", vc.name); ls("vc_proj", vc.proj); s.hidden = true; chargePdf(R, a, b, label, vc); };
 }
 /* charging details per vehicle (managers/admin): every charge with times, battery, kWh, amount, driver and the receipt file */
