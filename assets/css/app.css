@@ -537,3 +537,4 @@ table.trm tr.tr-tot td{border-top:2px solid var(--line);background:rgba(31,194,2
 .doc .sm,.doc .xs{color:inherit} /* app utility classes must not recolour report tables */
 .doc .sm b{color:inherit}
 .doc .sub,.doc .wait,.doc .meta,.doc .lbl,.doc .empty{color:#0f1b3d}
+.doc th.cc,.doc td.cc{text-align:center}

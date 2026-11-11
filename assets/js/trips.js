@@ -162,10 +162,12 @@ async function tripReport() {
     const ok = plan.filter((t) => L.some((l) => l.status === "standby" && l.photo_path && String(l.scheduled_time).slice(0, 5) === t.time && l.origin === t.origin));
     const late = ok.filter((t) => { const l = L.find((x) => x.photo_path && String(x.scheduled_time).slice(0, 5) === t.time && x.origin === t.origin); return minsOf(bkkHM(l.taken_at)) > minsOf(t.time) + LATE_MIN; });
     const can = L.filter((l) => l.status === "cancelled").length;
-    return { plan: plan.length, ok: ok.length, late: late.length, can, r2: isSirirajQ(qq.queue_code) };
+    const tdy = today(); if (d > tdy) return { future: true, plan: 0, full: plan.length, ok: 0, late: 0, can: 0, r2: isSirirajQ(qq.queue_code) };
+    const due = d < tdy ? plan.length : Math.max(ok.length + can, plan.filter((t) => minsOf(t.time) + 15 <= minsOf(nowHM())).length); // today: only trips already due
+    return { plan: due, full: plan.length, ok: ok.length, late: late.length, can, r2: isSirirajQ(qq.queue_code) };
   };
   const G = days.map((d) => cars.map((c) => cell(d, c)));
-  const sumC = cars.map((c, j) => G.reduce((s, r) => { const x = r[j]; if (x) { s.plan += x.plan; s.ok += x.ok; s.late += x.late; s.can += x.can; s.days++; } return s; }, { plan: 0, ok: 0, late: 0, can: 0, days: 0 }));
+  const sumC = cars.map((c, j) => G.reduce((s, r) => { const x = r[j]; if (x && !x.future) { s.plan += x.plan; s.ok += x.ok; s.late += x.late; s.can += x.can; s.days++; } return s; }, { plan: 0, ok: 0, late: 0, can: 0, days: 0 }));
   const pct = (o, p) => (p ? Math.round((o / p) * 100) : 0);
   const label = `${MONTH[trMonth.getMonth()]} ${trMonth.getFullYear() + 543}`;
   const P = await paxStats(a, b);
@@ -177,7 +179,7 @@ async function tripReport() {
   // daily grid: fixed columns so the bus headers sit exactly over their numbers (date | STC-01 | STC-02 | STC-03 | STC-04)
   const nowD = today(), carHead = cars.map((c) => `<th class="c"><i class="tr-dot" style="background:${VHEX[c]}"></i>${c}<small>${VPLATE[c] || ""}</small></th>`).join("");
   const cellHTML = (x, d) => { if (!x) return `<td class="c"><span class="tr-off">จอด</span></td>`;
-    if (d > nowD) return `<td class="c"><span class="tr-off">แผน ${x.plan}</span></td>`;
+    if (x.future) return `<td class="c"><span class="tr-off">แผน ${x.full}</span></td>`;
     const st = x.ok >= x.plan ? "ok" : d === nowD ? "now" : x.ok ? "part" : "none";
     return `<td class="c"><b class="tr-n ${st}">${x.ok}<span>/${x.plan}</span></b>${x.late || x.can ? `<small class="tr-sub">${x.late ? `<em class="late">ช้า ${x.late}</em>` : ""}${x.can ? `<em>ยกเลิก ${x.can}</em>` : ""}</small>` : ""}</td>`; };
   const rowCls = (d) => (dObj(d).getDay() % 6 === 0 ? "we" : "") + (d === nowD ? " today" : "");
@@ -218,7 +220,7 @@ async function tripExcel(label, a, b, days, cars, qs, logs, G, sumC, P) {
        [`ช้า = รายงานหลังเวลาออกตามตารางเกิน ${LATE_MIN} นาที · ผู้โดยสารนับเฉพาะคนขึ้นรถ · STC-03 สายศิริราช 3 เที่ยว/วัน`]]);
     // 2) daily trips
     const s2 = title(`รายวัน: เที่ยวที่รายงานแล้ว / ตามแผน · ${label}`).concat([[H("วันที่"), H("วัน"), ...cars.flatMap((c) => [H(`${c} รายงาน`), H(`${c} แผน`), H(`${c} ช้า`)]), H("รวม รายงาน"), H("รวม แผน")]],
-      days.map((d, i) => { const r = G[i]; return [dDate(d), DOW[dObj(d).getDay()], ...r.flatMap((x) => (x ? [I(x.ok), I(x.plan), I(x.late)] : ["จอด", "", ""])), BI(r.reduce((s3, x) => s3 + (x ? x.ok : 0), 0)), BI(r.reduce((s3, x) => s3 + (x ? x.plan : 0), 0))]; }),
+      days.map((d, i) => { const r = G[i]; return [dDate(d), DOW[dObj(d).getDay()], ...r.flatMap((x) => (!x ? ["จอด", "", ""] : x.future ? ["", `แผน ${x.full}`, ""] : [I(x.ok), I(x.plan), I(x.late)])), BI(r.reduce((s3, x) => s3 + (x ? x.ok : 0), 0)), BI(r.reduce((s3, x) => s3 + (x ? x.plan : 0), 0))]; }),
       [[B("รวม"), "", ...sumC.flatMap((x) => [BI(x.ok), BI(x.plan), BI(x.late)]), BI(tot.ok), BI(tot.plan)]]);
     // 3) daily passengers
     const s3 = title(`รายวัน: ผู้โดยสารขึ้น (คน) · ${label}`).concat([[H("วันที่"), H("วัน"), ...cars.map(H), H("สายหลัก"), H("สายศิริราช"), H("รวม")]],
@@ -259,14 +261,14 @@ async function tripPdf(label, days, cars, G, sumC, logs, P) {
   const foot = (p, n) => `<footer class="df"><span>ข้อมูลจากระบบ ณ ${bk(today())} ${nowHM()} น. · เที่ยวตามแผนจากคิวรถประจำวัน</span><span>หน้า ${p}/${n}</span></footer>`;
   const cards = cars.map((c, j) => `<div class="dcard" style="--c:${VHEX[c]}"><b>${c}</b><span>ทะเบียน ${VPLATE[c]}</span><strong>${pct(sumC[j].ok, sumC[j].plan)}%</strong><span>${sumC[j].ok}/${sumC[j].plan} เที่ยว · ${sumC[j].days} วัน</span></div>`).join("");
   const tot = sumC.reduce((s, x) => ({ ok: s.ok + x.ok, plan: s.plan + x.plan, late: s.late + x.late, can: s.can + x.can }), { ok: 0, plan: 0, late: 0, can: 0 });
-  const rows = days.map((d, i) => `<tr class="${dObj(d).getDay() % 6 === 0 ? "we" : ""}"><td class="c">${dObj(d).getDate()}</td><td>${DOW[dObj(d).getDay()]}</td>${G[i].map((x) => `<td class="r">${x ? `${x.ok}/${x.plan}${x.late ? ` · ช้า ${x.late}` : ""}${x.can ? ` · ยกเลิก ${x.can}` : ""}` : `<span class="pk">จอด</span>`}</td>`).join("")}</tr>`).join("");
+  const rows = days.map((d, i) => `<tr class="${dObj(d).getDay() % 6 === 0 ? "we" : ""}"><td class="c">${dObj(d).getDate()}</td><td>${DOW[dObj(d).getDay()]}</td>${G[i].map((x) => `<td class="cc">${!x ? `<span class="pk">จอด</span>` : x.future ? `<span class="pk">แผน ${x.full}</span>` : `<b>${x.ok}</b>/${x.plan}${x.late ? ` · ช้า ${x.late}` : ""}${x.can ? ` · ยกเลิก ${x.can}` : ""}`}</td>`).join("")}</tr>`).join("");
   const p1 = `${head}<div class="dcards">${cards}</div>
     <h2>สรุปทั้งเดือน</h2><table class="dst"><thead><tr><th>รถ</th><th class="r">วันให้บริการ</th><th class="r">ตามแผน</th><th class="r">รายงานแล้ว</th><th class="r">ร้อยละ</th><th class="r">ช้า</th><th class="r">ยกเลิก</th><th class="r">ไม่รายงาน</th></tr></thead><tbody>
     ${cars.map((c, j) => { const x = sumC[j]; return `<tr><td>${c}</td><td class="r">${x.days}</td><td class="r">${x.plan}</td><td class="r">${x.ok}</td><td class="r">${pct(x.ok, x.plan)}</td><td class="r">${x.late}</td><td class="r">${x.can}</td><td class="r">${Math.max(0, x.plan - x.ok - x.can)}</td></tr>`; }).join("")}
     <tr><td><b>รวม</b></td><td></td><td class="r"><b>${tot.plan}</b></td><td class="r"><b>${tot.ok}</b></td><td class="r"><b>${pct(tot.ok, tot.plan)}</b></td><td class="r"><b>${tot.late}</b></td><td class="r"><b>${tot.can}</b></td><td class="r"><b>${Math.max(0, tot.plan - tot.ok - tot.can)}</b></td></tr></tbody></table>
-    <h2>รายวัน (รายงานแล้ว/ตามแผน)</h2><table class="dtb sm xs"><thead><tr><th>วันที่</th><th>วัน</th>${cars.map((c) => `<th class="r"><i style="background:${VHEX[c]}"></i>${c}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>
+    <h2>รายวัน (รายงานแล้ว/ตามแผน)</h2><table class="dtb sm xs"><thead><tr><th>วันที่</th><th>วัน</th>${cars.map((c) => `<th class="cc"><i style="background:${VHEX[c]}"></i>${c}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>
     <p class="dnote">ช้า = บันทึกหลังเวลาออกตามตารางเกิน ${LATE_MIN} นาที · STC-03 เส้น MRT อิสรภาพ – รพ.ศิริราช 3 เที่ยว/วัน (08:30 · 11:00 · 13:00) · รูปถ่ายทุกเที่ยวเก็บในระบบ ดูได้ที่เมนูรอบเดินรถ</p>
-    ${dSign(["ผู้จัดทำ", "ผู้ตรวจสอบ", "ผู้อนุมัติ"])}${foot(1, P && P.n ? 2 : 1)}`;
+    ${P && P.n ? "" : dSign(["ผู้จัดทำ", "ผู้ตรวจสอบ", "ผู้อนุมัติ"])}${foot(1, P && P.n ? 2 : 1)}`;
   let p2 = "";
   if (P && P.n) {
     const times = Object.keys(P.byTime).sort();
@@ -278,7 +280,7 @@ async function tripPdf(label, days, cars, G, sumC, logs, P) {
       <div style="flex:1"><h2>ช่วงเวลา (ศูนย์ฯ–รฟม.)</h2><table class="dst"><tbody><tr><td>Peak เช้า 07:15–08:40</td><td class="r">${P.bySlot.am}</td></tr><tr><td>Off-Peak 09:00–16:30</td><td class="r">${P.bySlot.off}</td></tr><tr><td>Peak เย็น 17:00–19:20</td><td class="r">${P.bySlot.pm}</td></tr></tbody></table>
       <h2>แยกจุดขึ้นรถ</h2><table class="dst"><thead><tr><th>ทิศทาง</th><th>จุด</th><th class="r">คน</th></tr></thead><tbody>${stopRows}</tbody></table>
       <h2>แยกตามเวลาออก</h2><table class="dtb sm xs"><thead><tr><th>เวลา</th><th class="r">01</th><th class="r">02</th><th class="r">04</th><th class="r">รวม</th></tr></thead><tbody>${timeRows}</tbody></table></div></div>
-      <p class="dnote">ข้อมูลจากการบันทึกของพนักงานขับรถทุกจุดจอดในแอพ (แทนแบบฟอร์มกระดาษ) · ทุกตารางคำนวณจากข้อมูลชุดเดียวกัน ยอดรวมจึงตรงกันทุกตาราง</p>${foot(2, 2)}`;
+      <p class="dnote">ข้อมูลจากการบันทึกของพนักงานขับรถทุกจุดจอดในแอพ (แทนแบบฟอร์มกระดาษ) · ทุกตารางคำนวณจากข้อมูลชุดเดียวกัน ยอดรวมจึงตรงกันทุกตาราง</p>${dSign(["ผู้จัดทำ", "ผู้ตรวจสอบ", "ผู้อนุมัติ"])}${foot(2, 2)}`;
   }
   const pg = (x) => `<section class="dpg" style="width:${W}px;height:${H}px;margin:0;box-shadow:none">${x}</section>`;
   const html = `<div class="doc" style="width:${W}px">${pg(p1)}${p2 ? pg(p2) : ""}</div>`;
