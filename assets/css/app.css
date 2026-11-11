@@ -538,3 +538,22 @@ table.trm tr.tr-tot td{border-top:2px solid var(--line);background:rgba(31,194,2
 .doc .sm b{color:inherit}
 .doc .sub,.doc .wait,.doc .meta,.doc .lbl,.doc .empty{color:#0f1b3d}
 .doc th.cc,.doc td.cc{text-align:center}
+/* schedule week grid · drag to swap (11 พ.ย. 2569) */
+.swseg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.swseg button{min-height:40px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:inherit;cursor:pointer;font:inherit;font-size:.84rem;font-weight:500}
+.swseg button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.swg{display:grid;grid-template-columns:minmax(58px,1.3fr) repeat(7,minmax(0,1fr));gap:4px;margin-top:10px;user-select:none;-webkit-user-select:none}
+.swh{text-align:center;font-size:.72rem;color:var(--muted);line-height:1.1;padding:2px 0}
+.swh b{display:block;font-size:.95rem;color:var(--text,inherit)}
+.swh.we{color:var(--blue)}.swh.td b{color:#fff;background:var(--blue);border-radius:8px}
+.swn{display:flex;flex-direction:column;justify-content:center;line-height:1.1;min-width:0}
+.swn b{font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.swn small{font-size:.66rem;color:var(--muted)}
+.swc{position:relative;height:44px;display:grid;place-items:center;border-radius:9px;border:1px solid var(--line);background:var(--card);font-weight:700;font-size:.82rem;cursor:grab;touch-action:none;-webkit-touch-callout:none}
+.swc i{position:absolute;top:1px;right:4px;font-style:normal;color:var(--warn);font-size:.8rem}
+.swc.sw-work{background:color-mix(in srgb,var(--c,#1a64ff) 26%,var(--card));border-color:var(--c,#1a64ff)}
+.swc.sw-off{background:repeating-linear-gradient(135deg,var(--card) 0 6px,rgba(140,150,175,.16) 6px 12px);color:var(--muted);font-weight:600}
+.swc.sw-leave{color:var(--warn);font-weight:600}.swc.sw-sb{color:var(--muted);font-weight:500;font-size:.74rem}.swc.sw-none{color:var(--muted);font-weight:400}
+.swc.past{opacity:.45;cursor:pointer;touch-action:auto}
+.swc.sel{outline:3px solid var(--blue);outline-offset:1px}
+.swc.ov{outline:3px dashed var(--ok,#2f9e44);outline-offset:1px}
+.swghost{position:fixed;z-index:9999;pointer-events:none;opacity:.9;box-shadow:0 8px 24px rgba(0,0,0,.4);transform:scale(1.08)}

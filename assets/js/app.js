@@ -592,13 +592,84 @@ function dayRow(r) {
   const st = { work: v ? `<b>${v.code}</b> · รอบแรก ${String(r.first_time || "").slice(0, 5)} ${esc(r.first_origin || "")}` : "ทำงาน", off: "วันหยุด", leave: `ลา${r.leave_type ? " · " + esc(r.leave_type) : ""}`, standby: "สำรอง (พร้อมรับรถแทน)" }[r.status];
   return `<div class="day ${x.getDay() % 6 === 0 ? "we" : ""} ${r.work_date === today() ? "today" : ""}" style="${v ? `border-left:4px solid ${COLOR[v.code]}` : ""}"><div class="d"><b class="num">${x.getDate()}</b><small>${DOW[x.getDay()]}</small></div><div class="sm">${st}${r.note ? `<em class="sub2">${esc(r.note.includes("แทน") ? "ขับแทน" : r.note)}</em>` : ""}</div></div>`;
 }
+/* manager: week grid · drag a cell onto another (or tap one, then tap the other) to swap
+   same row = swap a day off with a work day · same column = swap two people's work that day (rules in swap_sched) */
+let schedMode = (() => { try { return localStorage.getItem("schedMode") || "week"; } catch (e) { return "week"; } })();
+const schedModeBar = () => `<div class="swseg" style="margin-top:12px"><button id="smW" class="${schedMode === "week" ? "on" : ""}">รายสัปดาห์ · ลากสลับ</button><button id="smD" class="${schedMode === "day" ? "on" : ""}">รายวัน · แก้ทีละคน</button></div>`;
+const bindSchedMode = () => { const set = (m) => { schedMode = m; try { localStorage.setItem("schedMode", m); } catch (e) {} scheduleManager(); }; $("smW").onclick = () => set("week"); $("smD").onclick = () => set("day"); };
+async function scheduleWeek() {
+  const m0 = dObj(schedDay); m0.setDate(m0.getDate() - ((m0.getDay() + 6) % 7));
+  const days = Array.from({ length: 7 }, (_, i) => { const x = new Date(m0); x.setDate(x.getDate() + i); return iso(x); });
+  const [rows, emps] = await Promise.all([
+    q(sb.from("work_schedules").select("*").gte("work_date", days[0]).lte("work_date", days[6])),
+    q(sb.from("employees").select("*").in("kind", ["regular", "relief", "spare"]).order("code")),
+  ]);
+  const cell = (e, d) => rows.find((r) => r.employee_id === e.id && r.work_date === d);
+  const lab = (r) => { if (!r) return ["–", "sw-none"]; const v = vById(r.vehicle_id);
+    return r.status === "work" ? [v ? v.code.replace("STC-", "") : "งาน", "sw-work"] : r.status === "off" ? ["หยุด", "sw-off"] : r.status === "leave" ? ["ลา", "sw-leave"] : ["สำรอง", "sw-sb"]; };
+  const t = today();
+  main().innerHTML = `${schedModeBar()}<div class="wk"><button id="wPrev" aria-label="สัปดาห์ก่อน">‹</button><div>${bk(days[0])} – ${bk(days[6])}<small>ลากช่องไปวางบนอีกช่องเพื่อสลับ · หรือแตะช่องแรกแล้วแตะช่องที่สอง</small></div><button id="wNext" aria-label="สัปดาห์ถัดไป">›</button></div>
+   <div class="swg" id="swg"><div class="swh"></div>${days.map((d) => { const x = dObj(d); return `<div class="swh ${x.getDay() % 6 === 0 ? "we" : ""} ${d === t ? "td" : ""}">${DOW[x.getDay()]}<b>${x.getDate()}</b></div>`; }).join("")}
+   ${emps.map((e) => `<div class="swn"><b>${esc(e.full_name.split(" ")[0])}</b><small>${{ regular: "ประจำ", relief: "ขับแทน", spare: "สแปร์" }[e.kind] || ""}</small></div>${days.map((d) => { const r = cell(e, d), [l, c] = lab(r), v = r && vById(r.vehicle_id);
+     return `<div class="swc ${c} ${d < t ? "past" : ""}" data-e="${e.id}" data-d="${d}" style="${r?.status === "work" && v ? `--c:${COLOR[v.code]}` : ""}" title="${esc(r?.note || "")}">${l}${r?.note && /แทน|สลับ/.test(r.note) ? "<i>•</i>" : ""}</div>`; }).join("")}`).join("")}</div>
+   <p class="sm" style="margin:8px 0 0">ตัวเลข = รถ STC-0x · • = ขับแทน/สลับ · <b>สลับวันหยุด</b>: ลากช่อง "หยุด" ไปวางบนวันทำงานของคนเดียวกัน · <b>สลับงานสองคน</b>: ลากในวันเดียวกัน · วันที่ผ่านมาแล้วสลับไม่ได้</p>
+   <div id="swBar" class="notice" style="margin-top:8px" hidden></div>
+   <a class="btn block" href="#pdf" style="margin-top:10px">ตารางงานประจำรอบ PDF · รวม / แยกรายคน</a>`;
+  bindSchedMode();
+  const go = (n) => { const x = dObj(schedDay); x.setDate(x.getDate() + n); schedDay = iso(x); scheduleManager(); };
+  $("wPrev").onclick = () => go(-7); $("wNext").onclick = () => go(7);
+  let sel = null; const bar = $("swBar");
+  const clearSel = () => { if (sel) sel.classList.remove("sel"); sel = null; bar.hidden = true; };
+  const pickFirst = (el) => { clearSel(); sel = el; el.classList.add("sel"); const e = emps.find((x) => x.id === el.dataset.e);
+    bar.innerHTML = `เลือก <b>${esc(e.full_name.split(" ")[0])} · ${bk(el.dataset.d)}</b> แล้ว — แตะช่องที่จะสลับด้วย <button class="lnk" id="swEd">แก้ไขช่องนี้</button> <button class="lnk" id="swNo">ยกเลิก</button>`; bar.hidden = false;
+    $("swNo").onclick = clearSel; $("swEd").onclick = () => { schedDay = el.dataset.d; editSched(e, cell(e, el.dataset.d), scheduleManager); }; };
+  const drop = (from, to) => { if (!from || !to || from === to) return clearSel();
+    if (from.dataset.e !== to.dataset.e && from.dataset.d !== to.dataset.d) { clearSel(); toast("สลับได้เฉพาะแถวเดียวกัน (คนเดิม) หรือคอลัมน์เดียวกัน (วันเดียวกัน)"); return; }
+    if (from.dataset.d < t || to.dataset.d < t) { clearSel(); toast("วันที่ผ่านมาแล้วสลับไม่ได้ · แตะช่องแล้วกดแก้ไขแทน"); return; }
+    const args = { p_emp_a: from.dataset.e, p_date_a: from.dataset.d, p_emp_b: to.dataset.e, p_date_b: to.dataset.d }; clearSel(); swapSheet(args); };
+  // pointer drag (mouse, pen, finger) with a floating copy; a short tap selects instead
+  const grid = $("swg"); let drag = null;
+  grid.onpointerdown = (ev) => { const el = ev.target.closest(".swc"); if (!el || el.classList.contains("past")) return;
+    drag = { el, x: ev.clientX, y: ev.clientY, ghost: null, id: ev.pointerId }; };
+  grid.onpointermove = (ev) => { if (!drag || ev.pointerId !== drag.id) return;
+    if (!drag.ghost) { if (Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y) < 8) return;
+      try { grid.setPointerCapture(ev.pointerId); } catch (e) {}
+      drag.ghost = drag.el.cloneNode(true); drag.ghost.classList.add("swghost"); drag.ghost.style.width = drag.el.offsetWidth + "px"; document.body.appendChild(drag.ghost); drag.el.classList.add("sel"); }
+    ev.preventDefault(); drag.ghost.style.left = ev.clientX - drag.el.offsetWidth / 2 + "px"; drag.ghost.style.top = ev.clientY - 20 + "px";
+    grid.querySelectorAll(".swc.ov").forEach((x) => x.classList.remove("ov")); const o = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.(".swc"); if (o && o !== drag.el) o.classList.add("ov"); };
+  const end = (ev) => { if (!drag || ev.pointerId !== drag.id) return; const d = drag; drag = null; grid.querySelectorAll(".swc.ov").forEach((x) => x.classList.remove("ov"));
+    if (d.ghost) { d.ghost.remove(); d.el.classList.remove("sel"); if (ev.type === "pointercancel") return; drop(d.el, document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.(".swc")); return; }
+    if (ev.type === "pointercancel") return;
+    if (sel && sel !== d.el) drop(sel, d.el); else if (sel === d.el) clearSel(); else pickFirst(d.el); };
+  grid.onpointerup = end; grid.onpointercancel = end;
+  grid.querySelectorAll(".swc.past").forEach((el) => (el.onclick = () => { const e = emps.find((x) => x.id === el.dataset.e); schedDay = el.dataset.d; editSched(e, cell(e, el.dataset.d), scheduleManager); }));
+}
+/* preview what the swap will change (dry run on the server), then confirm */
+async function swapSheet(args) {
+  const s = $("sheet");
+  s.innerHTML = `<div class="in"><div class="sh"><b>สลับตารางงาน</b><button class="lnk" id="shX">ปิด</button></div><p class="sm"><span class="spin"></span> กำลังตรวจ…</p></div>`;
+  s.hidden = false; $("shX").onclick = () => (s.hidden = true);
+  let plan;
+  try { plan = await q(sb.rpc("swap_sched", { ...args, p_dry: true })); }
+  catch (e) { const m = errMsg(e); s.querySelector(".in").innerHTML = `<div class="sh"><b>สลับไม่ได้</b><button class="lnk" id="shX">ปิด</button></div><p class="err">${esc(/swap_sched|function/.test(m) && !/[ก-๙]/.test(m) ? "ระบบลากสลับยังไม่เปิดใช้ (รอรัน SQL)" : m)}</p>`; $("shX").onclick = () => (s.hidden = true); return; }
+  const same = args.p_emp_a === args.p_emp_b;
+  s.querySelector(".in").innerHTML = `<div class="sh"><b>${same ? "สลับวันหยุด" : `สลับงาน ${bk(args.p_date_a)}`}</b><button class="lnk" id="shX">ปิด</button></div>
+    <p class="sm" style="margin:0">ตรวจรายการด้านล่างก่อนยืนยัน · คิวรถอยู่กับรถเหมือนเดิม</p>
+    <table class="t"><thead><tr><th>วันที่</th><th>ชื่อ</th><th>เดิม</th><th>ใหม่</th></tr></thead><tbody>${(plan || []).map((x) => `<tr><td class="num">${bk(x.date)}</td><td>${esc(x.name || "")}</td><td>${esc(x.before)}</td><td><b>${esc(x.after)}</b></td></tr>`).join("")}</tbody></table>
+    <p class="err" id="swErr" hidden></p><button class="btn pri block" id="swGo">ยืนยันสลับ</button><button class="btn block" id="swCx">ยกเลิก</button>`;
+  $("shX").onclick = $("swCx").onclick = () => (s.hidden = true);
+  $("swGo").onclick = async () => { const b = $("swGo"); b.disabled = true; b.innerHTML = `<span class="spin"></span>กำลังบันทึก…`;
+    try { await q(sb.rpc("swap_sched", { ...args, p_dry: false })); s.hidden = true; toast("สลับตารางแล้ว"); scheduleManager(); }
+    catch (e) { b.disabled = false; b.textContent = "ยืนยันสลับ"; $("swErr").textContent = errMsg(e); $("swErr").hidden = false; } };
+}
 async function scheduleManager() {
   if (!schedDay) schedDay = today();
+  if (schedMode === "week") return scheduleWeek();
   const [rows, emps] = await Promise.all([
     q(sb.from("work_schedules").select("*").eq("work_date", schedDay)),
     q(sb.from("employees").select("*").in("kind", ["regular", "relief", "spare"]).order("code")),
   ]);
-  main().innerHTML = `<div class="wk"><button id="dPrev" aria-label="วันก่อน">‹</button><div>${bkLong(schedDay)}<small>ตารางปฏิบัติงาน · แตะชื่อเพื่อแก้ไข</small></div><button id="dNext" aria-label="วันถัดไป">›</button></div>
+  main().innerHTML = `${schedModeBar()}<div class="wk"><button id="dPrev" aria-label="วันก่อน">‹</button><div>${bkLong(schedDay)}<small>ตารางปฏิบัติงาน · แตะชื่อเพื่อแก้ไข</small></div><button id="dNext" aria-label="วันถัดไป">›</button></div>
    <a class="btn block" href="#pdf" style="margin-top:10px">ตารางงานประจำรอบ PDF · รวม / แยกรายคน</a>
    <div class="fld" style="margin-top:8px"><label for="dPick">ไปวันที่</label><input type="date" id="dPick" value="${schedDay}"></div>
    <h2>พนักงานขับรถ</h2><div class="list">${emps.map((e) => { const r = rows.find((x) => x.employee_id === e.id) || { status: null }; const v = vById(r.vehicle_id);
@@ -608,8 +679,9 @@ async function scheduleManager() {
   $("dNext").onclick = () => { const x = dObj(schedDay); x.setDate(x.getDate() + 1); go(iso(x)); };
   $("dPick").onchange = (e) => e.target.value && go(e.target.value);
   main().querySelectorAll("[data-edit]").forEach((b) => (b.onclick = () => editSched(emps.find((e) => e.id === b.dataset.edit), rows.find((x) => x.employee_id === b.dataset.edit))));
+  bindSchedMode();
 }
-function editSched(emp, row) {
+function editSched(emp, row, after) {
   const s = $("sheet");
   s.innerHTML = `<div class="in"><div class="sh"><b>${esc(emp.full_name)} · ${bk(schedDay)}</b><button class="lnk" id="shX">ปิด</button></div>
    <div class="grid"><div class="fld"><label for="eSt">สถานะ</label><select id="eSt">${[["work", "ทำงาน"], ["off", "วันหยุด"], ["leave", "ลา"], ["standby", "สำรอง"]].map(([k, l]) => `<option value="${k}" ${row?.status === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
@@ -624,7 +696,7 @@ function editSched(emp, row) {
     const st = $("eSt").value, vid = $("eV").value || null;
     if (st === "work" && !vid) { $("eErr").textContent = "สถานะทำงานต้องเลือกรถ"; $("eErr").hidden = false; return; }
     const rec = { work_date: schedDay, employee_id: emp.id, status: st, vehicle_id: st === "work" ? vid : null, leave_type: st === "leave" ? $("eLt").value || null : null, first_time: st === "work" && $("eT").value ? $("eT").value : null, first_origin: st === "work" ? $("eO").value || null : null, note: $("eN").value.trim() || null, approval: "approved", created_by: (await sb.auth.getUser()).data.user.id, updated_at: new Date().toISOString() };
-    try { await q(sb.from("work_schedules").upsert(rec, { onConflict: "work_date,employee_id" })); s.hidden = true; toast("บันทึกตารางแล้ว"); scheduleManager(); }
+    try { await q(sb.from("work_schedules").upsert(rec, { onConflict: "work_date,employee_id" })); s.hidden = true; toast("บันทึกตารางแล้ว"); (after || scheduleManager)(); }
     catch (e) { $("eErr").textContent = /one_driver_per_vehicle/.test(e.message) ? "รถคันนี้มีคนขับในวันนี้แล้ว เปลี่ยนคนเดิมก่อน" : errMsg(e); $("eErr").hidden = false; }
   };
 }
