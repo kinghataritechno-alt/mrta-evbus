@@ -77,6 +77,19 @@
     await pg.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
     return ocr(c, step);
   }
+  /* receipt file → JPEG data URL no larger than maxPx on the long side (for the PDF report's receipt pages) · PDF = page 1 */
+  window.receiptImage = async function (blob, isPdf, maxPx) {
+    let src;
+    if (isPdf) { await load(PDFJS); pdfjsLib.GlobalWorkerOptions.workerSrc = PDFW;
+      const doc = await pdfjsLib.getDocument({ data: await blob.arrayBuffer() }).promise, pg = await doc.getPage(1), vp = pg.getViewport({ scale: 2 });
+      src = document.createElement("canvas"); src.width = vp.width; src.height = vp.height; await pg.render({ canvasContext: src.getContext("2d"), viewport: vp }).promise; }
+    else src = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error("img")); i.src = URL.createObjectURL(blob); });
+    const w = src.naturalWidth || src.width, h = src.naturalHeight || src.height, sc = Math.min(1, maxPx / Math.max(w, h));
+    const c = document.createElement("canvas"); c.width = Math.round(w * sc); c.height = Math.round(h * sc);
+    const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(src, 0, 0, c.width, c.height);
+    if (src.src) URL.revokeObjectURL(src.src);
+    return { url: c.toDataURL("image/jpeg", 0.85), w: c.width, h: c.height };
+  };
   window.readReceipt = (blob, isPdf, step) => (isPdf ? pdfText(blob, step) : ocr(blob, step));
 
   /* fill the charge form (ids cNo cRef cK cSub cVat cTot) — only empty fields; mismatches are reported, never overwritten */
@@ -100,8 +113,19 @@
     const miss = F.filter(([id, v]) => v == null && !byId(id)?.value.trim()).map(([, , l]) => l);
     let h = got.length ? `🔍 ระบบอ่านจากใบเสร็จแล้ว: <b>${got.join(", ")}</b> (ช่องสีฟ้า) · <b>ตรวจให้ตรงกับใบเสร็จก่อนบันทึก</b>` : "🔍 อ่านค่าจากใบเสร็จไม่ได้ · กรอกเอง";
     if (miss.length && got.length) h += `<br>ยังต้องกรอกเอง: ${miss.join(", ")}`;
-    const chk = window.receiptMatch ? window.receiptMatch(o, ctx) : null; // date / time of the receipt vs the charge
-    if (chk) h += `<br>${chk.ok ? "✅" : "⚠️"} ${chk.msg}`; else if (o.time) h += `<br>เวลาบนใบเสร็จ ${o.time} น.`;
+    // the record is saved with the receipt's date (and end time) — shown here, applied on save
+    const wh = window.receiptWhen(o, ctx), th = (d) => (typeof bk === "function" ? bk(d) : d), hm = (x) => (x ? new Date(x).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Bangkok" }) : "");
+    let chk = null;
+    if (root && root.dataset) { delete root.dataset.rcDate; delete root.dataset.rcTime; }
+    if (wh && wh.bad) chk = { ok: false, msg: `วันที่บนใบเสร็จ${wh.date ? ` <b>${th(wh.date)}</b>` : ""} ไม่สมเหตุสมผลกับการชาร์จนี้ · ตรวจว่าแนบใบเสร็จถูกใบหรือไม่` };
+    else if (wh) {
+      if (root && root.dataset) { root.dataset.rcDate = wh.date; if (wh.time) root.dataset.rcTime = wh.time; }
+      const was = ctx && ctx.date ? `${th(ctx.date)}${ctx.end ? " " + hm(ctx.end) + " น." : ""}` : "", same = ctx && ctx.date === wh.date;
+      chk = { ok: true, msg: `📅 บันทึกตามใบเสร็จ: <b>${th(wh.date)}${wh.time ? ` เวลา ${wh.time} น.` : ""}</b>${was && !same ? ` (เดิม ${was})` : ""}` };
+      const dt = byId("eDt"), ee = byId("eE"), es = byId("eS"); // edit sheet: show the receipt's date/time in the fields
+      if (dt) dt.value = wh.date; if (ee && wh.time) { ee.value = wh.time; if (es && es.value && es.value >= wh.time && dt) es.value = ""; }
+    }
+    if (chk) h += `<br>${chk.ok ? "" : "⚠️ "}${chk.msg}`; else if (o.time) h += `<br>เวลาบนใบเสร็จ ${o.time} น.`;
     if (diff.length) h += `<br>⚠️ ไม่ตรงกับที่กรอกไว้ — ${diff.join(" · ")}`;
     let cls = got.length ? "ok" : "warn"; let warn = chk && !chk.ok;
     if (warn) cls = "bad";
@@ -114,21 +138,17 @@
     say(h, cls);
   };
   /* receipt date/time vs charge: date = charge day (time inside start−30 min … end+90 min) · next day is accepted as the issue date */
-  window.receiptMatch = function (o, ctx) {
-    if (!ctx || !ctx.date || !(o.date || o.day)) return null;
-    const d0 = ctx.date, d1 = (() => { const [y, m, d] = d0.split("-").map(Number), x = new Date(Date.UTC(y, m - 1, d + 1)); return x.toISOString().slice(0, 10); })();
-    const same = (d) => (o.date ? o.date === d : +d.slice(8) === o.day && +d.slice(0, 4) === o.year);
-    const th = (d) => (typeof bk === "function" ? bk(d) : d), hm = (x) => (x ? new Date(x).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Bangkok" }) : "–");
-    const rd = o.date ? th(o.date) : `วันที่ ${o.day} ปี ${o.year + 543}`, cw = `ชาร์จ ${th(d0)} ${hm(ctx.start)}–${hm(ctx.end)} น.`;
-    if (same(d0)) {
-      if (o.time && ctx.start) {
-        const t = new Date(`${d0}T${o.time}+07:00`).getTime(), a = new Date(ctx.start).getTime() - 30 * 6e4, b = new Date(ctx.end || ctx.start).getTime() + 90 * 6e4;
-        if (t < a || t > b) return { ok: false, msg: `เวลาบนใบเสร็จ <b>${o.time.slice(0, 5)} น.</b> ไม่ตรงกับเวลาชาร์จ (${cw}) · ตรวจว่าแนบใบเสร็จถูกครั้งหรือไม่` };
-        return { ok: true, msg: `วันที่และเวลาบนใบเสร็จตรงกับการชาร์จ (ใบเสร็จ ${rd} ${o.time.slice(0, 5)} น. · ${cw})` };
-      }
-      return { ok: true, msg: `วันที่บนใบเสร็จตรงกับวันที่ชาร์จ (${rd}) · อ่านเวลาไม่ได้ ตรวจเวลาเอง` };
-    }
-    if (same(d1)) return { ok: true, msg: `ใบเสร็จลงวันที่ถัดจากวันชาร์จ (${rd}) · ${cw} · ตรวจว่าเป็นการชาร์จครั้งเดียวกัน` };
-    return { ok: false, msg: `วันที่บนใบเสร็จ <b>${rd}</b> ไม่ตรงกับวันที่ชาร์จ (${cw}) · ตรวจว่าแนบใบเสร็จถูกใบหรือไม่` };
+  /* receipt date/time → the date and time the record is saved with (the receipt is the source of truth)
+     PDF text gives the full date · photo OCR gives day + Buddhist year only → month = the one nearest the recorded charge date */
+  window.receiptWhen = function (o, ctx) {
+    if (!(o.date || o.day)) return null;
+    let d = o.date;
+    if (!d) { const base = ctx && ctx.date ? new Date(ctx.date + "T12:00:00+07:00") : new Date(), cands = [];
+      const now = Date.now() + 7 * 36e5; // a receipt can't be dated in the future
+      for (let k = -2; k <= 1; k++) { const x = new Date(Date.UTC(o.year, base.getUTCMonth() + k, o.day)); if (x.getUTCDate() === o.day && x.getUTCFullYear() === o.year && x.getTime() <= now) cands.push(x); }
+      cands.sort((a, b) => Math.abs(a - base) - Math.abs(b - base)); if (!cands.length || Math.abs(cands[0] - base) > 20 * 864e5) return { bad: true }; d = cands[0].toISOString().slice(0, 10); }
+    const todayISO = new Date(Date.now() + 7 * 36e5).toISOString().slice(0, 10);
+    if (d > todayISO || (ctx && ctx.date && Math.abs(new Date(d) - new Date(ctx.date)) > 31 * 864e5)) return { bad: true, date: d };
+    return { date: d, time: o.time ? o.time.slice(0, 5) : null };
   };
 })();

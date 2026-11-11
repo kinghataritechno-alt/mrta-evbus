@@ -912,13 +912,17 @@ function attachSheet(r) {
     const b = $("aSave"); b.disabled = true; b.innerHTML = `<span class="spin"></span>กำลังบันทึก…`;
     try {
       const path = await upload(r.vehicle_id, "receipt", blob);
-      await q(sb.rpc("attach_receipt", { p_id: r.id, p_path: path, p_no: no, p_ref: g("cRef").value.trim() || null, p_kwh: k, p_sub: parseFloat(g("cSub").value) || null, p_vat: parseFloat(g("cVat").value) || null, p_total: tot }));
-      s.hidden = true; CD.m = null; toast("แนบใบเสร็จแล้ว"); charge();
+      const w = rcWhen(s), args = { p_id: r.id, p_path: path, p_no: no, p_ref: g("cRef").value.trim() || null, p_kwh: k, p_sub: parseFloat(g("cSub").value) || null, p_vat: parseFloat(g("cVat").value) || null, p_total: tot };
+      if (w) { args.p_date = w.date; if (w.end) { args.p_end = w.end; const st = r.started_at ? new Date(r.started_at) : null, en = new Date(w.end); if (!st || st >= en || en - st > 12 * 36e5) args.p_start = w.end; } }
+      await q(sb.rpc("attach_receipt", args));
+      s.hidden = true; CD.m = null; toast(rcWhen(s) && rcWhen(s).date !== r.receipt_date ? `แนบใบเสร็จแล้ว · บันทึกเป็นวันที่ ${bk(rcWhen(s).date)} ตามใบเสร็จ` : "แนบใบเสร็จแล้ว"); charge();
     } catch (e) { b.disabled = false; b.textContent = "บันทึกใบเสร็จ"; $("aErr").textContent = /attach_receipt|function/.test(errMsg(e)) ? "ระบบแนบใบเสร็จภายหลังยังไม่เปิดใช้ (รอรัน SQL)" : errMsg(e); $("aErr").hidden = false; }
   };
 }
 /* view / edit / delete one charging record · driver: own record until the day after charging · manager: any time (rules enforced in edit_charge / delete_charge) */
 /* receipt reader found a date/time/plate mismatch → the first tap on save only warns; a second tap saves */
+/* receipt reader result → { date, end ISO } (date/time printed on the receipt) */
+const rcWhen = (root) => { const d = root.dataset.rcDate, t = root.dataset.rcTime; return d ? { date: d, end: t ? new Date(`${d}T${t}:00+07:00`).toISOString() : null } : null; };
 function ocrGate(root, btn, err) { if (root.dataset.ocrWarn !== "1" || btn.dataset.ok === "1") return true; btn.dataset.ok = "1"; err("⚠️ ใบเสร็จไม่ตรงกับการชาร์จนี้ (ดูข้อความสีแดงด้านบน) · ถ้าตรวจแล้วถูกต้อง กดบันทึกอีกครั้งเพื่อยืนยัน"); return false; }
 const canEditCharge = (r) => isMgr() || (r.source === "app" && r.employee_id && r.employee_id === ME.employee?.id && r.receipt_date >= iso(new Date(dObj(today()).getTime() - 864e5)));
 async function chargeEdit(r, after) {
@@ -933,6 +937,7 @@ async function chargeEdit(r, after) {
       ${can ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label class="btn block" style="min-height:52px;border-style:dashed">📷 ${r.receipt_path ? "ถ่ายใบเสร็จใหม่" : "ถ่ายภาพใบเสร็จ"}<input type="file" accept="image/*" capture="environment" id="eRc" hidden></label>
         <label class="btn block" style="min-height:52px;border-style:dashed">🖼️ ${r.receipt_path ? "เปลี่ยนไฟล์" : "เลือกรูป / PDF"}<input type="file" accept="image/*,application/pdf" id="eRf" hidden></label></div><p id="ocrNote" hidden></p>` : ""}
       <fieldset ${can ? "" : "disabled"} style="border:0;padding:0;margin:0;min-width:0"><div class="grid">
+        <div class="fld full"><label for="eDt">วันที่ชาร์จ (ตามใบเสร็จ)</label><input id="eDt" type="date" value="${r.receipt_date}" max="${today()}"></div>
         <div class="fld"><label for="eS">เริ่มชาร์จ</label><input id="eS" type="time" value="${hm(r.started_at)}"></div>
         <div class="fld"><label for="eE">สิ้นสุด</label><input id="eE" type="time" value="${hm(r.ended_at)}"></div>
         <div class="fld full"><label for="cSt">สถานีชาร์จ</label><input id="cSt" value="${esc(r.station || "")}"></div>
@@ -959,15 +964,19 @@ async function chargeEdit(r, after) {
     g("eRc").onchange = pick; g("eRf").onchange = pick;
     g("eSave").onclick = async () => {
       const err = (m) => { g("eErr").textContent = m; g("eErr").hidden = false; };
-      const ts = (hhmm) => (hhmm ? new Date(`${r.receipt_date}T${hhmm}:00+07:00`).toISOString() : null);
-      const st = ts(g("eS").value), en = ts(g("eE").value);
+      const dt = g("eDt").value || r.receipt_date;
+      if (dt > today()) return err("วันที่ชาร์จต้องไม่เกินวันนี้");
+      const ts = (hhmm) => (hhmm ? new Date(`${dt}T${hhmm}:00+07:00`).toISOString() : null);
+      // charging that crossed midnight: start belongs to the previous day
+      let st = ts(g("eS").value); const en = ts(g("eE").value);
+      if (st && en && en <= st && g("eS").value > g("eE").value) st = new Date(new Date(st).getTime() - 864e5).toISOString();
       if (st && en && en <= st) return err("เวลาสิ้นสุดต้องหลังเวลาเริ่มชาร์จ");
       if (g("cNo").value.trim() && !/^\d{12}$/.test(g("cNo").value.trim())) return err("เลขที่ใบเสร็จต้องเป็นตัวเลข 12 หลัก");
       if (!ocrGate(s, g("eSave"), err)) return;
       const b = g("eSave"); b.disabled = true; b.innerHTML = `<span class="spin"></span>กำลังบันทึก…`;
       try {
         const path = blob ? await upload(r.vehicle_id, "receipt", blob) : null;
-        await q(sb.rpc("edit_charge", { p_id: r.id, p: { started_at: st, ended_at: en, station: g("cSt").value, soc_before: g("cA").value, soc_after: g("cB").value, receipt_no: g("cNo").value, ev_ref: g("cRef").value, kwh: g("cK").value, subtotal: g("cSub").value, vat: g("cVat").value, total: g("cTot").value, receipt_path: path } }));
+        await q(sb.rpc("edit_charge", { p_id: r.id, p: { receipt_date: dt, started_at: st, ended_at: en, station: g("cSt").value, soc_before: g("cA").value, soc_after: g("cB").value, receipt_no: g("cNo").value, ev_ref: g("cRef").value, kwh: g("cK").value, subtotal: g("cSub").value, vat: g("cVat").value, total: g("cTot").value, receipt_path: path } }));
         s.hidden = true; CD.m = null; toast("บันทึกการแก้ไขแล้ว"); (after || charge)();
       } catch (x) { b.disabled = false; b.textContent = "บันทึกการแก้ไข"; err(/edit_charge|function/.test(errMsg(x)) ? "ระบบแก้ไขยังไม่เปิดใช้ (รอรัน SQL)" : errMsg(x)); }
     };
@@ -1107,11 +1116,12 @@ async function saveCharge(vs) {
   const btn = $("cSave"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span>กำลังบันทึก…`;
   try {
     const later = !CH.blob, path = later ? null : await upload(CH.vid, "receipt", CH.blob);
-    const startedAt = stD.toISOString(), endedAt = enD.toISOString();
-    const rec = { vehicle_id: CH.vid, employee_id: ME.employee?.id || null, started_at: startedAt, ended_at: endedAt, station: o.cSt.trim(), soc_before: a, soc_after: b, receipt_no: o.cNo.trim() || null, receipt_date: today(), ev_ref: o.cRef.trim() || null, kwh: k > 0 ? k : null, unit_price: 7.0093, subtotal: parseFloat(o.cSub) || null, vat: parseFloat(o.cVat) || null, total: tot > 0 ? tot : null, receipt_path: path, source: "app" };
+    const w = rcWhen(main()); let startedAt = stD.toISOString(), endedAt = enD.toISOString(), rDate = today();
+    if (w) { rDate = w.date; if (w.end) { endedAt = w.end; const en = new Date(w.end); if (!(stD < en && en - stD < 12 * 36e5)) startedAt = w.end; } }
+    const rec = { vehicle_id: CH.vid, employee_id: ME.employee?.id || null, started_at: startedAt, ended_at: endedAt, station: o.cSt.trim(), soc_before: a, soc_after: b, receipt_no: o.cNo.trim() || null, receipt_date: rDate, ev_ref: o.cRef.trim() || null, kwh: k > 0 ? k : null, unit_price: 7.0093, subtotal: parseFloat(o.cSub) || null, vat: parseFloat(o.cVat) || null, total: tot > 0 ? tot : null, receipt_path: path, source: "app" };
     try { await q(sb.from("charging_records").insert(rec)); }
     catch (e) { if (later && /null value|not-null|23502/i.test(errMsg(e) + (e.code || ""))) throw new Error("ตอนนี้ยังต้องแนบใบเสร็จก่อนบันทึก (ระบบแนบภายหลังรอรัน SQL)"); throw e; }
-    setRun(null); CH.blob = null; CH.url = null; CH.pdf = false; delete main().dataset.ocrWarn; CD.m = null;
+    setRun(null); CH.blob = null; CH.url = null; CH.pdf = false; delete main().dataset.ocrWarn; delete main().dataset.rcDate; delete main().dataset.rcTime; CD.m = null;
     const v = vById(rec.vehicle_id), endHM = eHM;
     const text = `${v.code} (${v.plate}) ชาร์จไฟฟ้าเรียบร้อย\n${bk(today())} เวลา ${sHM}–${endHM} น.\nแบต ${a}% → ${b}%${rec.kwh ? ` · ${fmt(k, 2)} kWh` : ""}\n${rec.total ? `ค่าไฟฟ้า ${fmt(tot)} บาท · ` : ""}${later ? "ใบเสร็จ: รอแนบวันถัดไป" : `ใบเสร็จ ${rec.receipt_no}`}\n${rec.station} · ${ME.employee?.name || PROFILE.display_name}`;
     main().innerHTML = `<section style="padding-top:20px;display:flex;flex-direction:column;gap:12px"><span class="pill ok" style="margin:0;align-self:flex-start">✓ บันทึกการชาร์จแล้ว</span>
@@ -1353,9 +1363,15 @@ async function chargePdf(R, a, b, label, vc) {
     const PER = 44, chunks = [];
     const rows = [...R].sort((x, y) => (x.receipt_date + (x.started_at || "")).localeCompare(y.receipt_date + (y.started_at || ""))).map(lrow);
     for (let i = 0; i < rows.length; i += PER) chunks.push(rows.slice(i, i + PER));
-    const of = 1 + chunks.length;
+    let of = 1 + chunks.length;
     const lhead = `<thead><tr><th class="c">#</th><th>วันที่</th><th>เวลาชาร์จ</th><th>รถ</th><th>เลขที่ใบเสร็จ</th><th>ผู้บันทึก</th><th class="r">แบต</th><th class="r">kWh</th><th class="r">บาท</th></tr></thead>`;
-    const pages = [summary(1, of, chunks.length === 0)].concat(chunks.map((c, i) => `${head(i + 2, of)}<h2>รายการชาร์จและใบเสร็จ ${i ? "(ต่อ)" : ""}</h2><table class="dst">${lhead}<tbody>${c.join("")}${i === chunks.length - 1 ? `<tr><td colspan="7"><b>รวม ${R.length} รายการ</b></td><td class="r"><b>${fmt(K, 2)}</b></td><td class="r"><b>${fmt(T)}</b></td></tr>` : ""}</tbody></table>${i === chunks.length - 1 ? dSign(["ผู้จัดทำ", "ผู้ตรวจสอบ", "ผู้อนุมัติ"]) : ""}${foot(i + 2, of)}`));
+    // receipt images (every attached receipt in the range) · fitted onto at most 2 pages
+    btn.innerHTML = `<span class="spin"></span> กำลังโหลดภาพใบเสร็จ…`;
+    const imgs = await receiptImgs(R, (i, n) => (btn.innerHTML = `<span class="spin"></span> โหลดภาพใบเสร็จ ${i}/${n}…`));
+    const rcPages = imgs.list.length ? rcLayout(imgs.list, imgs.miss) : [];
+    of += rcPages.length;
+    const pages = [summary(1, of, chunks.length === 0)].concat(chunks.map((c, i) => `${head(i + 2, of)}<h2>รายการชาร์จและใบเสร็จ ${i ? "(ต่อ)" : ""}</h2><table class="dst">${lhead}<tbody>${c.join("")}${i === chunks.length - 1 ? `<tr><td colspan="7"><b>รวม ${R.length} รายการ</b></td><td class="r"><b>${fmt(K, 2)}</b></td><td class="r"><b>${fmt(T)}</b></td></tr>` : ""}</tbody></table>${i === chunks.length - 1 ? dSign(["ผู้จัดทำ", "ผู้ตรวจสอบ", "ผู้อนุมัติ"]) : ""}${foot(i + 2, of)}`))
+      .concat(rcPages.map((fn, i) => fn(head(chunks.length + 2 + i, of), foot(chunks.length + 2 + i, of), i, rcPages.length)));
     const W = 794, H = 1123, fname = vc ? `MRTA_payment_voucher_${a}_${b}.pdf` : `MRTA_charging_${a}_${b}.pdf`;
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
     // voucher (landscape, accounting form AC-FM-007) first, then the report pages (portrait) unless "voucher only"
@@ -1374,6 +1390,44 @@ async function chargePdf(R, a, b, label, vc) {
     pdfReady(blob, fname, vc ? `ใบสำคัญจ่าย + รายงานค่าไฟฟ้า ${label}` : `รายงานค่าไฟฟ้า ${label}`);
   } catch (e) { toast("สร้างรายงานไม่สำเร็จ: " + errMsg(e)); }
   finally { if (stage) stage.remove(); if (btn) { btn.disabled = false; btn.textContent = txt; } }
+}
+/* receipt files for the charging report → [{ r, url, w, h }] in date order · miss = receipts that could not be opened */
+async function receiptImgs(R, step) {
+  const L = [...R].filter((r) => r.receipt_path).sort((x, y) => (x.receipt_date + (x.started_at || "")).localeCompare(y.receipt_date + (y.started_at || "")));
+  const miss = R.filter((r) => r.receipt_path == null && r.receipt_no).length, out = [];
+  if (!L.length || !window.receiptImage) return { list: out, miss, fail: 0 };
+  const { data } = await sb.storage.from(CFG.bucket).createSignedUrls(L.map((r) => r.receipt_path), 600).catch(() => ({ data: [] }));
+  const url = {}; (data || []).forEach((x) => { if (x && x.signedUrl && x.path) url[x.path] = x.signedUrl; });
+  const px = L.length <= 6 ? 1400 : L.length <= 20 ? 1000 : 700; let done = 0, fail = 0;
+  const one = async (r) => {
+    try { const u = url[r.receipt_path]; if (!u) throw 0; const res = await fetch(u); if (!res.ok) throw 0; const b = await res.blob();
+      const im = await window.receiptImage(b, /\.pdf$/i.test(r.receipt_path) || b.type === "application/pdf", px); out.push({ r, ...im }); }
+    catch (e) { fail++; out.push({ r, url: null, w: 3, h: 4 }); }
+    step && step(++done, L.length);
+  };
+  for (let i = 0; i < L.length; i += 4) await Promise.all(L.slice(i, i + 4).map(one));
+  const ord = new Map(L.map((r, i) => [r.id, i])); out.sort((a, b) => ord.get(a.r.id) - ord.get(b.r.id));
+  return { list: out, miss, fail };
+}
+/* lay the receipt images out on 1 page (≤ 6) or 2 pages: pick the column count that gives each receipt the largest size */
+function rcLayout(list, miss) {
+  const nPg = list.length <= 6 ? 1 : 2, per = Math.ceil(list.length / nPg), W = 794 - 68, GAP = 6, two = per > 6, CAP = two ? 24 : 14;
+  const probe = document.createElement("div"); probe.className = "doc"; probe.style.cssText = "position:fixed;left:-20000px;top:0;width:794px";
+  probe.innerHTML = `<section class="dpg" style="width:794px">${dHead("x", "x")}<h2>x</h2></section>`; document.body.appendChild(probe);
+  const top = probe.firstChild.offsetHeight - 40 + 6; probe.remove(); // .dpg has 40px bottom padding
+  const avH = 1123 - top - 40, ars = list.map((x) => x.w / x.h).sort((a, b) => a - b), ar = ars[Math.floor(ars.length / 2)] || 0.75;
+  return Array.from({ length: nPg }, (_, p) => {
+    const L = list.slice(p * per, (p + 1) * per), n = L.length; let best = null;
+    for (let c = 1; c <= n; c++) { const rows = Math.ceil(n / c), cw = (W - (c - 1) * GAP) / c, ch = (avH - (rows - 1) * GAP) / rows - CAP, s = Math.min(cw, ch * ar) * Math.min(cw / ar, ch);
+      if (!best || s > best.s) best = { c, rows, cw, ch, s }; }
+    const { c, rows, cw, ch } = best;
+    const cells = L.map((x, i) => { const k = Math.min(cw / x.w, ch / x.h), iw = Math.floor(x.w * k), ih = Math.floor(x.h * k), r = x.r, gi = p * per + i + 1;
+      return `<div style="width:${cw}px;height:${ch + CAP}px;display:flex;flex-direction:column;align-items:center;border:1px solid #dde3f1;box-sizing:border-box;overflow:hidden">
+        <div style="height:${CAP}px;line-height:${two ? 11 : 14}px;padding-top:${two ? 1 : 0}px;box-sizing:border-box;font-size:${cw < 120 ? 7.5 : 9}px;color:#0f1b3d;white-space:nowrap;overflow:hidden;width:100%;text-align:center;background:#f3f6fc"><b>${gi}. ${r.bus}</b> · ${bk(r.receipt_date)}${two ? "<br>" : " · "}${r.receipt_no || "–"}${r.amt ? ` · ${fmt(r.amt)} ฿` : ""}</div>
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;width:100%">${x.url ? `<img src="${x.url}" style="width:${iw - 2}px;height:${ih - 2}px;display:block">` : `<span style="font-size:10px;color:#c92a2a">เปิดไฟล์ใบเสร็จไม่ได้</span>`}</div></div>`; }).join("");
+    return (head, foot, i, of) => `${head}<h2>ภาพใบเสร็จ ${list.length} ใบ${of > 1 ? ` (ส่วนที่ ${i + 1}/${of})` : ""}${miss && i === 0 ? ` <span style="font-size:10.5px;font-weight:400;color:#4a5a80">· ไม่มีไฟล์ภาพ ${miss} รายการ</span>` : ""}</h2>
+      <div style="position:absolute;left:34px;right:34px;top:${top}px;display:grid;grid-template-columns:repeat(${c},${cw}px);grid-auto-rows:${ch + CAP}px;gap:${GAP}px">${cells}</div>${foot}`;
+  });
 }
 /* ---------- ใบสำคัญจ่าย (AC-FM-007) — cover sheet for the petty-cash (เงินทดรองจ่าย) claim of charging costs ----------
    one row per work day: charges started before 05:00 belong to the previous work day (night charging) · amounts = receipt totals incl. VAT */
@@ -1409,7 +1463,7 @@ function voucherSheet(R, a, b, label) {
     <div class="grid"><div class="fld full"><label for="vcN">ชื่อผู้เบิก</label><input id="vcN" value="${esc(ls("vc_name"))}" placeholder="ชื่อ-นามสกุล"></div>
       <div class="fld"><label for="vcP">โครงการ</label><input id="vcP" value="${esc(ls("vc_proj") || "118")}"></div>
       <div class="fld"><label for="vcA">เงินทดรองจ่าย (บาท) ถ้ามี</label><input id="vcA" class="num" inputmode="decimal" placeholder="เว้นว่างได้"></div></div>
-    <p class="sm" style="margin:0">PDF = ใบสำคัญจ่าย (หน้า 1) + รายงานค่าไฟฟ้าและรายการใบเสร็จ</p>
+    <p class="sm" style="margin:0">PDF = ใบสำคัญจ่าย (หน้า 1) + รายงานค่าไฟฟ้าและรายการใบเสร็จ + ภาพใบเสร็จทุกใบ (ไม่เกิน 2 หน้า)</p>
     <button class="btn pri block" id="vcGo">สร้าง PDF</button></div>`;
   s.hidden = false; $("shX").onclick = () => (s.hidden = true);
   $("vcGo").onclick = () => { const vc = { name: $("vcN").value.trim(), proj: $("vcP").value.trim(), adv: parseFloat(String($("vcA").value).replace(/,/g, "")) || 0, only: false };
