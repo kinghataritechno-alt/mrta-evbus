@@ -225,14 +225,14 @@ function busPicker(list, sel, attr = "data-b") {
 const PDF_EN = [["รายงานตรวจรถประจำวัน", "Daily_Inspection"], ["รายงานการเดินรถและผู้โดยสาร", "Daily_Trips_Passengers"], ["ตารางคิวรถและพนักงานขับรถ", "Fleet_Schedule"], ["ตารางเข้าปฏิบัติงาน", "Timesheet"], ["ใบรับรองเวลาปฏิบัติงาน", "Work_Certificate"], ["รายงานรอบเดินรถ", "Monthly_Trips"], ["ตารางงาน", "Schedule"], ["รอบ", "P"]];
 function pdfAscii(fname) { let s = fname; PDF_EN.forEach(([th, en]) => (s = s.split(th).join(en))); return s.replace(/[^\x20-\x7E]/g, "").replace(/\s+/g, "_").replace(/_+/g, "_").replace(/_(\.pdf)$/i, "$1"); }
 function pdfReady(blob, fname, title) {
-  const name = pdfAscii(fname), url = URL.createObjectURL(blob), file = new File([blob], name, { type: "application/pdf" });
+  const isX = /\.xlsx$/i.test(fname), name = pdfAscii(fname), url = URL.createObjectURL(blob), file = new File([blob], name, { type: isX ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf" });
   const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
   const sh = $("sheet");
-  sh.innerHTML = `<div class="in"><div class="sh"><b>${esc(title || "PDF พร้อมแล้ว")}</b><button class="lnk" id="shX">ปิด</button></div>
+  sh.innerHTML = `<div class="in"><div class="sh"><b>${esc(title || (isX ? "Excel พร้อมแล้ว" : "PDF พร้อมแล้ว"))}</b><button class="lnk" id="shX">ปิด</button></div>
     <p class="sm" style="margin:0 0 10px">${esc(name)} · ${(blob.size / 1024).toFixed(0)} KB</p>
-    <div style="display:grid;gap:8px"><a class="btn pri block" href="${url}" target="_blank" rel="noopener">เปิดดู PDF</a>
+    <div style="display:grid;gap:8px">${isX ? "" : `<a class="btn pri block" href="${url}" target="_blank" rel="noopener">เปิดดู PDF</a>`}
     ${canShare ? `<button class="btn block" id="pShare">แชร์ไฟล์ (LINE / อีเมล / ไฟล์)</button>` : ""}
-    <a class="btn block" href="${url}" download="${esc(name)}">บันทึกไฟล์</a></div>
+    <a class="btn ${isX ? "pri " : ""}block" href="${url}" download="${esc(name)}">${isX ? "บันทึกไฟล์ Excel" : "บันทึกไฟล์"}</a></div>
 </div>`;
   sh.hidden = false; $("shX").onclick = () => (sh.hidden = true);
   if (canShare) $("pShare").onclick = () => navigator.share({ files: [file], title: name }).catch((e) => { if (e && e.name !== "AbortError") toast("แชร์ไฟล์ไม่ได้ ลองกด บันทึกไฟล์ แล้วแนบใน LINE"); });

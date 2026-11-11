@@ -516,3 +516,24 @@ table.lv tr.lv-day td{background:rgba(31,194,255,.07);border-top:1px solid var(-
 .doc .pv-t .pv-tot td{background:#fafafa}
 .doc .pv-sgs{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:30px;font-size:12px;text-align:center}.doc .pv-sg div+div{margin-top:6px}
 .doc .pv-note{font-size:10px;color:#333;margin:14px 0 0}
+/* tables: header alignment follows the column class */
+table.t th.r,table.t td.r{text-align:right} table.t th.c,table.t td.c{text-align:center}
+/* monthly trip report grid */
+table.trm{table-layout:fixed;width:100%}table.trm col.tr-dc{width:76px}
+table.trm th{vertical-align:bottom;padding:8px 4px}
+table.trm th small{display:block;font-weight:400;font-size:.66rem;color:var(--muted);margin-top:1px}
+.tr-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px}
+table.trm td{padding:7px 4px;vertical-align:middle}
+.tr-d{white-space:nowrap;color:var(--muted)}.tr-d b{color:var(--fg);display:inline-block;min-width:1.4em;text-align:right;margin-right:3px}
+.tr-n{font-size:1rem}.tr-n span{font-weight:400;color:var(--muted);font-size:.84rem}
+.tr-n.ok{color:var(--ok)}.tr-n.part{color:var(--warn)}.tr-n.none{color:var(--bad)}
+.tr-sub{display:block;font-size:.68rem;color:var(--muted);line-height:1.3}.tr-sub em{font-style:normal;margin:0 2px}.tr-sub .late{color:var(--warn)}
+.tr-off{color:var(--muted);font-size:.78rem;opacity:.7}
+table.trm tr.we td{background:rgba(255,255,255,.025)}table.trm tr.today td{background:rgba(31,194,255,.08)}
+table.trm tr.tr-tot td{border-top:2px solid var(--line);background:rgba(31,194,255,.05)}
+@media (max-width:480px){table.trm col.tr-dc{width:50px}table.trm th{font-size:.64rem;padding:6px 1px}table.trm th small{font-size:.58rem}.tr-dot{width:6px;height:6px;margin-right:3px}
+  table.trm td{padding:6px 1px}.tr-d{font-size:.72rem}.tr-n{font-size:.9rem}.tr-n span{font-size:.72rem}.tr-sub{font-size:.6rem}.tr-off{font-size:.66rem}
+  .sum.s4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.doc .sm,.doc .xs{color:inherit} /* app utility classes must not recolour report tables */
+.doc .sm b{color:inherit}
+.doc .sub,.doc .wait,.doc .meta,.doc .lbl,.doc .empty{color:#0f1b3d}

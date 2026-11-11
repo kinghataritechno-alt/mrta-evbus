@@ -24,6 +24,9 @@ const minsOf = (hm) => { const [h, m] = String(hm).slice(0, 5).split(":").map(Nu
 const bkkHM = (ts) => tHM(ts);
 const tl = (p) => q(p).catch((e) => { if (/trip_logs|relation|schema cache/i.test(errMsg(e))) throw new Error("ระบบรายงานรอบเดินรถยังไม่เปิดใช้ในฐานข้อมูล (รอรัน SQL trip_logs)"); throw e; });
 let TRIP = { date: null, vid: null, blob: null, url: null, trip: null };
+// month queries exceed the API's 1,000-row page → read every page (stable order by id) so monthly totals are complete
+async function qAll(build) { const out = []; for (let i = 0; i < 100000; i += 1000) { const { data, error } = await build().order("id").range(i, i + 999); if (error) throw error; out.push(...(data || [])); if (!data || data.length < 1000) break; } return out; }
+const tlAll = (build) => qAll(build).catch((e) => tl(Promise.resolve({ data: null, error: e })));
 
 async function tripPage() {
   if (!TRIP.date) TRIP.date = ME.date;
@@ -149,7 +152,7 @@ async function tripReport() {
   const a = iso(trMonth), b = iso(new Date(trMonth.getFullYear(), trMonth.getMonth() + 1, 0));
   const [qs, logs] = await Promise.all([
     q(sb.from("vehicle_queue").select("work_date,vehicle_id,queue_code").gte("work_date", a).lte("work_date", b)),
-    tl(sb.from("trip_logs").select("*").gte("work_date", a).lte("work_date", b)),
+    tlAll(() => sb.from("trip_logs").select("*").gte("work_date", a).lte("work_date", b)),
   ]);
   const days = []; for (let t = dObj(a); iso(t) <= b; t.setDate(t.getDate() + 1)) days.push(iso(t));
   const cars = ["STC-01", "STC-02", "STC-03", "STC-04"], idOf = (c) => VEH.find((v) => v.code === c)?.id;
@@ -171,22 +174,90 @@ async function tripReport() {
      <section class="sum">${cars.map((c) => `<div class="tile"><small>${c}</small><b class="num">${(P.byCar[c] || 0).toLocaleString("th-TH")}</b><span>คน</span></div>`).join("")}</section>
      <section class="sum"><div class="tile"><small>เช้า 07:15–08:40</small><b class="num">${P.bySlot.am}</b><span>คน</span></div><div class="tile"><small>กลางวัน 09:00–16:30</small><b class="num">${P.bySlot.off}</b><span>คน</span></div><div class="tile"><small>เย็น 17:00–19:20</small><b class="num">${P.bySlot.pm}</b><span>คน</span></div></section>
      <section class="card" style="margin-top:10px;overflow-x:auto"><table class="t"><thead><tr><th>จุดขึ้นรถ</th><th class="r">คน</th></tr></thead><tbody>${stopOrder(P.byStop).map(([k, n]) => { const [d, st] = k.split("|"); return `<tr><td>${{ CC: "ศูนย์ฯ → รฟม.", LOT: "รฟม. → ศูนย์ฯ", R2: "ศิริราช" }[d]} · ${esc(st)}</td><td class="r num">${n}</td></tr>`; }).join("")}</tbody></table></section>`;
-  const tbl = `<table class="t"><thead><tr><th>วันที่</th>${cars.map((c) => `<th class="r">${c}</th>`).join("")}</tr></thead><tbody>${days.map((d, i) => `<tr><td class="num">${dObj(d).getDate()} ${DOW[dObj(d).getDay()]}</td>${G[i].map((x) => `<td class="r num">${x ? `${x.ok}/${x.plan}${x.late ? ` <small style="color:#ffb347">ช้า${x.late}</small>` : ""}` : `<span class="sm">จอด</span>`}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  // daily grid: fixed columns so the bus headers sit exactly over their numbers (date | STC-01 | STC-02 | STC-03 | STC-04)
+  const nowD = today(), carHead = cars.map((c) => `<th class="c"><i class="tr-dot" style="background:${VHEX[c]}"></i>${c}<small>${VPLATE[c] || ""}</small></th>`).join("");
+  const cellHTML = (x, d) => { if (!x) return `<td class="c"><span class="tr-off">จอด</span></td>`;
+    if (d > nowD) return `<td class="c"><span class="tr-off">แผน ${x.plan}</span></td>`;
+    const st = x.ok >= x.plan ? "ok" : d === nowD ? "now" : x.ok ? "part" : "none";
+    return `<td class="c"><b class="tr-n ${st}">${x.ok}<span>/${x.plan}</span></b>${x.late || x.can ? `<small class="tr-sub">${x.late ? `<em class="late">ช้า ${x.late}</em>` : ""}${x.can ? `<em>ยกเลิก ${x.can}</em>` : ""}</small>` : ""}</td>`; };
+  const rowCls = (d) => (dObj(d).getDay() % 6 === 0 ? "we" : "") + (d === nowD ? " today" : "");
+  const tbl = `<table class="t trm"><colgroup><col class="tr-dc">${cars.map(() => "<col>").join("")}</colgroup><thead><tr><th>วันที่</th>${carHead}</tr></thead><tbody>${days.map((d, i) => `<tr class="${rowCls(d)}"><td class="tr-d"><b class="num">${dObj(d).getDate()}</b> ${DOW[dObj(d).getDay()]}</td>${G[i].map((x) => cellHTML(x, d)).join("")}</tr>`).join("")}
+    <tr class="tr-tot"><td><b>รวม</b></td>${sumC.map((x) => `<td class="c"><b class="num">${x.ok}/${x.plan}</b><small class="tr-sub">${pct(x.ok, x.plan)}%${x.late ? ` · <em class="late">ช้า ${x.late}</em>` : ""}</small></td>`).join("")}</tr></tbody></table>`;
+  const paxTbl = P && P.n ? `<h2>ผู้โดยสารรายวัน <small>คนขึ้น</small></h2><section class="card" style="overflow-x:auto"><table class="t trm"><colgroup><col class="tr-dc">${cars.map(() => "<col>").join("")}<col style="width:72px"></colgroup><thead><tr><th>วันที่</th>${carHead}<th class="c">รวม</th></tr></thead><tbody>${days.map((d) => { const v = cars.map((c) => P.byDay[d]?.[c]), t = v.reduce((a2, x) => a2 + (x || 0), 0);
+      return `<tr class="${rowCls(d)}"><td class="tr-d"><b class="num">${dObj(d).getDate()}</b> ${DOW[dObj(d).getDay()]}</td>${v.map((x) => `<td class="c num">${x != null ? x.toLocaleString("th-TH") : `<span class="tr-off">–</span>`}</td>`).join("")}<td class="c num"><b>${t ? t.toLocaleString("th-TH") : "–"}</b></td></tr>`; }).join("")}
+    <tr class="tr-tot"><td><b>รวม</b></td>${cars.map((c) => `<td class="c num"><b>${(P.byCar[c] || 0).toLocaleString("th-TH")}</b></td>`).join("")}<td class="c num"><b>${P.total.toLocaleString("th-TH")}</b></td></tr></tbody></table></section>` : "";
   main().innerHTML = `<div class="wk"><button id="trPrev" aria-label="เดือนก่อน">‹</button><div>${label}<small>รายงานรอบเดินรถ · 1 – ${days.length} ${MS[trMonth.getMonth()]}</small></div><button id="trNext" aria-label="เดือนถัดไป">›</button></div>
-   <section class="sum">${cars.map((c, j) => `<div class="tile"><small>${c}</small><b class="num">${pct(sumC[j].ok, sumC[j].plan)}%</b><span>${sumC[j].ok}/${sumC[j].plan} ${c === "STC-03" ? "รอบ" : "เที่ยว"}</span></div>`).join("")}</section>
-   <a class="btn block" id="trPdf" href="#" style="margin-top:12px">สร้าง PDF รายงานประจำเดือน</a>
+   <section class="sum s4">${cars.map((c, j) => `<div class="tile"><small>${c}</small><b class="num">${pct(sumC[j].ok, sumC[j].plan)}%</b><span>${sumC[j].ok}/${sumC[j].plan} เที่ยว</span></div>`).join("")}</section>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px"><a class="btn block" id="trPdf" href="#">📄 สร้าง PDF รายงานประจำเดือน</a><button class="btn block" id="trXls">📊 ดาวน์โหลด Excel</button></div>
    <h2>รายวัน <small>รายงานแล้ว/ตามแผน</small></h2><section class="card" style="overflow-x:auto">${tbl}</section>
-   <p class="sm">นับเฉพาะเที่ยวที่ถ่ายรูปรายงาน "สแตนด์บายรับออก" · ช้า = บันทึกหลังเวลาออกเกิน ${LATE_MIN} นาที · STC-03 นับเป็นรอบ (2 รอบ/วัน)</p>${paxHTML}`;
+   <p class="sm">นับเฉพาะเที่ยวที่ถ่ายรูปรายงาน "สแตนด์บายรับออก" · ช้า = บันทึกหลังเวลาออกเกิน ${LATE_MIN} นาที · STC-03 สายศิริราช 3 เที่ยว/วัน (08:30 · 11:00 · 13:00)</p>${paxTbl}${paxHTML}`;
   $("trPrev").onclick = () => { trMonth.setMonth(trMonth.getMonth() - 1); tripReport(); };
   $("trNext").onclick = () => { trMonth.setMonth(trMonth.getMonth() + 1); tripReport(); };
   $("trPdf").onclick = (e) => { e.preventDefault(); tripPdf(label, days, cars, G, sumC, logs, P); };
+  $("trXls").onclick = () => tripExcel(label, a, b, days, cars, qs, logs, G, sumC, P);
+}
+
+/* ---------- Excel: monthly trips + passengers (6 sheets, built in the browser — no outside service) ---------- */
+async function tripExcel(label, a, b, days, cars, qs, logs, G, sumC, P) {
+  const btn = $("trXls"), txt = btn.textContent;
+  if (!window.xlsxBlob) { toast("โหลดตัวสร้าง Excel ไม่ได้ ลองเปิดแอพใหม่"); return; }
+  btn.disabled = true; btn.innerHTML = `<span class="spin"></span> กำลังสร้าง Excel…`;
+  try {
+    const [stops, emps] = await Promise.all([qAll(() => sb.from("trip_stops").select("trip_log_id,vehicle_id,work_date,stop,board,alight").gte("work_date", a).lte("work_date", b)).catch(() => []), q(sb.from("employees").select("id,full_name")).catch(() => [])]);
+    const nm = (id) => (emps.find((e) => e.id === id) || {}).full_name || "";
+    const H = (t) => ({ v: t, s: "h" }), I = (v) => ({ v, s: "i" }), BI = (v) => ({ v, s: "bi" }), B = (v) => ({ v, s: "b" }), PC = (o, p) => ({ v: p ? o / p : 0, s: "p" });
+    const title = (t) => [[{ v: t, s: "t" }], [`MRTA Shuttle Bus · ${label} · ข้อมูลจากระบบ ณ ${bk(today())} ${nowHM()} น.`], []];
+    const ORI = (o) => (o === ORIGIN.C ? "ศูนย์วัฒนธรรมฯ" : o === ORIGIN.R ? "สถานี รฟม." : o === ORIGIN.HQ ? "รฟม. สำนักงานใหญ่" : o === ORIGIN.MRT ? "MRT อิสรภาพ" : o || "");
+    const paxOf = {}; stops.forEach((x) => { paxOf[x.trip_log_id] = (paxOf[x.trip_log_id] || 0) + (x.board || 0); });
+    const dDate = (d) => `${dObj(d).getDate()}/${dObj(d).getMonth() + 1}/${dObj(d).getFullYear() + 543}`;
+    // 1) summary
+    const tot = sumC.reduce((s2, x) => ({ days: s2.days + x.days, plan: s2.plan + x.plan, ok: s2.ok + x.ok, late: s2.late + x.late, can: s2.can + x.can }), { days: 0, plan: 0, ok: 0, late: 0, can: 0 });
+    const s1 = title(`รายงานรอบเดินรถและผู้โดยสาร ประจำเดือน ${label}`).concat([[H("รถ"), H("ทะเบียน"), H("วันให้บริการ"), H("เที่ยวตามแผน"), H("รายงานแล้ว"), H("ร้อยละ"), H("ช้า"), H("ยกเลิก"), H("ไม่รายงาน"), H("ผู้โดยสารขึ้น (คน)")]],
+      cars.map((c, j) => { const x = sumC[j]; return [B(c), VPLATE[c] || "", I(x.days), I(x.plan), I(x.ok), PC(x.ok, x.plan), I(x.late), I(x.can), I(Math.max(0, x.plan - x.ok - x.can)), I((P && P.byCar[c]) || 0)]; }),
+      [[B("รวม"), "", BI(tot.days), BI(tot.plan), BI(tot.ok), { v: tot.plan ? tot.ok / tot.plan : 0, s: "bp" }, BI(tot.late), BI(tot.can), BI(Math.max(0, tot.plan - tot.ok - tot.can)), BI((P && P.total) || 0)], [],
+       [`ช้า = รายงานหลังเวลาออกตามตารางเกิน ${LATE_MIN} นาที · ผู้โดยสารนับเฉพาะคนขึ้นรถ · STC-03 สายศิริราช 3 เที่ยว/วัน`]]);
+    // 2) daily trips
+    const s2 = title(`รายวัน: เที่ยวที่รายงานแล้ว / ตามแผน · ${label}`).concat([[H("วันที่"), H("วัน"), ...cars.flatMap((c) => [H(`${c} รายงาน`), H(`${c} แผน`), H(`${c} ช้า`)]), H("รวม รายงาน"), H("รวม แผน")]],
+      days.map((d, i) => { const r = G[i]; return [dDate(d), DOW[dObj(d).getDay()], ...r.flatMap((x) => (x ? [I(x.ok), I(x.plan), I(x.late)] : ["จอด", "", ""])), BI(r.reduce((s3, x) => s3 + (x ? x.ok : 0), 0)), BI(r.reduce((s3, x) => s3 + (x ? x.plan : 0), 0))]; }),
+      [[B("รวม"), "", ...sumC.flatMap((x) => [BI(x.ok), BI(x.plan), BI(x.late)]), BI(tot.ok), BI(tot.plan)]]);
+    // 3) daily passengers
+    const s3 = title(`รายวัน: ผู้โดยสารขึ้น (คน) · ${label}`).concat([[H("วันที่"), H("วัน"), ...cars.map(H), H("สายหลัก"), H("สายศิริราช"), H("รวม")]],
+      days.map((d) => { const v = cars.map((c) => (P && P.byDay[d]?.[c]) || 0), sir = v[cars.indexOf("STC-03")] || 0, all = v.reduce((x, y) => x + y, 0); return [dDate(d), DOW[dObj(d).getDay()], ...v.map(I), I(all - sir), I(sir), BI(all)]; }),
+      [[B("รวม"), "", ...cars.map((c) => BI((P && P.byCar[c]) || 0)), BI(((P && P.total) || 0) - ((P && P.byCar["STC-03"]) || 0)), BI((P && P.byCar["STC-03"]) || 0), BI((P && P.total) || 0)]]);
+    // 4) every planned trip
+    const now = minsOf(nowHM()), rows4 = [];
+    days.forEach((d) => cars.forEach((c) => { const vid = VEH.find((v) => v.code === c)?.id, qq = qs.find((x) => x.work_date === d && x.vehicle_id === vid); if (!qq) return;
+      tripsOf(qq.queue_code).forEach((t) => { const l = logs.find((x) => x.work_date === d && x.vehicle_id === vid && String(x.scheduled_time).slice(0, 5) === t.time && x.origin === t.origin);
+        let st = "รอเวลา", late = "";
+        if (l && l.status === "cancelled") st = "ยกเลิก";
+        else if (l && l.photo_path) { const m = minsOf(bkkHM(l.taken_at)) - minsOf(t.time); st = m > LATE_MIN ? "ช้า" : "ตรงเวลา"; late = m > LATE_MIN ? m : ""; }
+        else if (d < today() || (d === today() && minsOf(t.time) + 15 <= now)) st = "ไม่รายงาน";
+        rows4.push([dDate(d), c, qq.queue_code, t.time, ORI(t.origin), st, l && l.photo_path ? bkkHM(l.taken_at) : "", late === "" ? "" : I(late), l ? I(paxOf[l.id] || 0) : "", l ? nm(l.employee_id) : ""]); }); }));
+    const s4 = title(`รายเที่ยว · ${label}`).concat([[H("วันที่"), H("รถ"), H("คิว"), H("เวลาออก"), H("ต้นทาง"), H("ผลรายงาน"), H("เวลารายงาน"), H("ช้า (นาที)"), H("ผู้โดยสารขึ้น"), H("พนักงานขับรถ")]], rows4);
+    // 5) by stop · 6) by departure time
+    const s5 = title(`ผู้โดยสารแยกจุดขึ้นรถ · ${label}`).concat([[H("ทิศทาง"), H("จุดขึ้นรถ"), H("คน")]], P ? stopOrder(P.byStop).map(([k, n]) => { const [dr, st] = k.split("|"); return [{ CC: "ศูนย์ฯ → รฟม.", LOT: "รฟม. → ศูนย์ฯ", R2: "ศิริราช" }[dr], st, I(n)]; }) : [],
+      [[B("รวม"), "", BI(P ? Object.values(P.byStop).reduce((x, y) => x + y, 0) : 0)]]);
+    const R1 = ["STC-01", "STC-02", "STC-04"], times = P ? Object.keys(P.byTime).sort() : [];
+    const s6 = title(`ผู้โดยสารแยกตามเวลาออก (สายหลัก) · ${label}`).concat([[H("เวลาออก"), ...R1.map(H), H("รวม")]], times.map((t) => [t, ...R1.map((c) => I(P.byTime[t][c] || 0)), BI(R1.reduce((x, c) => x + (P.byTime[t][c] || 0), 0))]),
+      [[], [B("ช่วงเวลา"), "", "", "", B("คน")], ["Peak เช้า 07:15–08:40", "", "", "", I(P ? P.bySlot.am : 0)], ["Off-Peak 09:00–16:30", "", "", "", I(P ? P.bySlot.off : 0)], ["Peak เย็น 17:00–19:20", "", "", "", I(P ? P.bySlot.pm : 0)]]);
+    const blob = window.xlsxBlob([
+      { name: "สรุป", rows: s1, cols: [12, 11, 12, 12, 12, 10, 8, 9, 11, 16], freeze: 4 },
+      { name: "รายวัน-เที่ยว", rows: s2, cols: [12, 6, ...cars.flatMap(() => [10, 9, 8]), 11, 10], freeze: 4 },
+      { name: "รายวัน-ผู้โดยสาร", rows: s3, cols: [12, 6, 10, 10, 10, 10, 11, 12, 10], freeze: 4 },
+      { name: "รายเที่ยว", rows: s4, cols: [12, 9, 9, 9, 18, 11, 11, 10, 12, 26], freeze: 4 },
+      { name: "จุดขึ้นรถ", rows: s5, cols: [16, 34, 10], freeze: 4 },
+      { name: "เวลาออก", rows: s6, cols: [22, 10, 10, 10, 10], freeze: 4 },
+    ]);
+    pdfReady(blob, `MRTA_trips_passengers_${a.slice(0, 7)}.xlsx`, `Excel รายงานเดินรถและผู้โดยสาร ${label}`);
+  } catch (e) { toast("สร้าง Excel ไม่สำเร็จ: " + errMsg(e)); }
+  finally { btn.disabled = false; btn.textContent = txt; }
 }
 
 async function tripPdf(label, days, cars, G, sumC, logs, P) {
   const W = 794, H = 1123, pct = (o, p) => (p ? ((o / p) * 100).toFixed(1) : "0.0");
   const head = `<header class="dh"><img src="assets/img/mrta-logo-en.png" alt="MRTA" class="dm"><div class="dt"><h1>รายงานรอบเดินรถประจำเดือน ${label}</h1><p>MRTA Shuttle Bus · สแตนด์บายรับออกพร้อมรูปถ่ายประทับเวลา</p></div><div class="dco"><img src="assets/img/st-logo-banner.png?v=2" alt="SMART TERMINAL CORPORATION"></div></header>`;
   const foot = (p, n) => `<footer class="df"><span>ข้อมูลจากระบบ ณ ${bk(today())} ${nowHM()} น. · เที่ยวตามแผนจากคิวรถประจำวัน</span><span>หน้า ${p}/${n}</span></footer>`;
-  const cards = cars.map((c, j) => `<div class="dcard" style="--c:${VHEX[c]}"><b>${c}</b><span>ทะเบียน ${VPLATE[c]}</span><strong>${pct(sumC[j].ok, sumC[j].plan)}%</strong><span>${sumC[j].ok}/${sumC[j].plan} ${c === "STC-03" ? "รอบ" : "เที่ยว"} · ${sumC[j].days} วัน</span></div>`).join("");
+  const cards = cars.map((c, j) => `<div class="dcard" style="--c:${VHEX[c]}"><b>${c}</b><span>ทะเบียน ${VPLATE[c]}</span><strong>${pct(sumC[j].ok, sumC[j].plan)}%</strong><span>${sumC[j].ok}/${sumC[j].plan} เที่ยว · ${sumC[j].days} วัน</span></div>`).join("");
   const tot = sumC.reduce((s, x) => ({ ok: s.ok + x.ok, plan: s.plan + x.plan, late: s.late + x.late, can: s.can + x.can }), { ok: 0, plan: 0, late: 0, can: 0 });
   const rows = days.map((d, i) => `<tr class="${dObj(d).getDay() % 6 === 0 ? "we" : ""}"><td class="c">${dObj(d).getDate()}</td><td>${DOW[dObj(d).getDay()]}</td>${G[i].map((x) => `<td class="r">${x ? `${x.ok}/${x.plan}${x.late ? ` · ช้า ${x.late}` : ""}${x.can ? ` · ยกเลิก ${x.can}` : ""}` : `<span class="pk">จอด</span>`}</td>`).join("")}</tr>`).join("");
   const p1 = `${head}<div class="dcards">${cards}</div>
@@ -496,7 +567,7 @@ window.liveTrips = liveTrips;
 /* passenger statistics for the monthly report */
 const SLOT = (hm) => { const m = minsOf(hm); return m <= minsOf("08:40") ? "am" : m >= minsOf("17:00") ? "pm" : "off"; };
 async function paxStats(a, b) {
-  const [S, L] = await Promise.all([q(sb.from("trip_stops").select("*").gte("work_date", a).lte("work_date", b)).catch(() => null), tl(sb.from("trip_logs").select("id,vehicle_id,work_date,scheduled_time,origin,queue_code").gte("work_date", a).lte("work_date", b))]);
+  const [S, L] = await Promise.all([qAll(() => sb.from("trip_stops").select("*").gte("work_date", a).lte("work_date", b)).catch(() => null), tlAll(() => sb.from("trip_logs").select("id,vehicle_id,work_date,scheduled_time,origin,queue_code").gte("work_date", a).lte("work_date", b))]);
   if (!S) return null;
   const LG = Object.fromEntries(L.map((l) => [l.id, l])), code = (id) => vcode(id);
   const byDay = {}, byStop = {}, bySlot = { am: 0, off: 0, pm: 0 }, byTime = {}, byCar = {};
