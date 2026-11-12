@@ -557,3 +557,12 @@ table.trm tr.tr-tot td{border-top:2px solid var(--line);background:rgba(31,194,2
 .swc.sel{outline:3px solid var(--blue);outline-offset:1px}
 .swc.ov{outline:3px dashed var(--ok,#2f9e44);outline-offset:1px}
 .swghost{position:fixed;z-index:9999;pointer-events:none;opacity:.9;box-shadow:0 8px 24px rgba(0,0,0,.4);transform:scale(1.08)}
+/* ปรับตารางเดินรถ (12 พ.ย. 2569) */
+.qa-bus{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.qa-bus button{min-height:42px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:inherit;font:inherit;font-weight:700;cursor:pointer;border-left:5px solid var(--c)}
+.qa-bus button.on{background:color-mix(in srgb,var(--c) 30%,var(--card));border-color:var(--c)}
+.qa-q{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;cursor:pointer}
+.qa-q input{width:20px;height:20px;margin-top:2px;flex:none}.qa-q small{color:var(--muted)}
+.qa-trips{display:grid;gap:6px}
+.qa-t{display:grid;grid-template-columns:26px 104px 1fr auto;gap:6px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 8px}
+.qa-t span{color:var(--muted);text-align:center}.qa-t input,.qa-t select{min-height:38px;font:inherit}.qa-t .lnk{color:var(--bad,#e5484d)}

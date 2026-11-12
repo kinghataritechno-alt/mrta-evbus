@@ -99,7 +99,7 @@ function docFleet(days, ws, emps) {
     const cells = CARS.map((c) => { const r = w.find((x) => vcode(x.vehicle_id) === c); return r ? `<td><span class="q">${esc(r.queue_code || "")}</span> ${String(r.first_time || "").slice(0, 5)} ${ori(r.first_origin)} <span class="n">· ${QTRIPS[r.queue_code] ?? ""}</span></td>` : `<td class="pk">${empty ? "–" : "จอด"}</td>`; }).join("");
     return `<tr class="${isWE(d) ? "we" : ""}"><td class="c">${dnum(d)}</td><td>${DOW[dObj(d).getDay()]}</td>${cells}</tr>`;
   }).join("");
-  const tot = Object.fromEntries(CARS.map((c) => [c, ws.filter((r) => r.status === "work" && vcode(r.vehicle_id) === c).reduce((s, r) => s + (QTRIPS[r.queue_code] || 0), 0)]));
+  const tot = Object.fromEntries(CARS.map((c) => [c, ws.filter((r) => r.status === "work" && vcode(r.vehicle_id) === c).reduce((s, r) => s + (QTRIPS[r.queue_code] || (typeof tripsOf === "function" ? tripsOf(r.queue_code).length : 0)), 0)]));
   const cards = CARS.map((c) => `<div class="dcard" style="--c:${VHEX[c]}"><b>${c}</b><span>ทะเบียน ${VPLATE[c]}</span><strong>${tot[c]}</strong><span>${c === "STC-03" ? "รอบศิริราช" : "เที่ยว"}/รอบงาน</span></div>`).join("");
   const p1 = `${dHead("ตารางคิวรถและพนักงานขับรถ " + periodLabel(pdfMonth), "MRTA Shuttle Bus · " + periodSpan(pdfMonth))}
    <div class="dcards">${cards}</div>
@@ -147,7 +147,7 @@ function docSheet(days, ws, emps) {
 function docPerson(days, ws, e) {
   ws = ws.filter((r) => r.employee_id === e.id);
   const R = Object.fromEntries(ws.map((r) => [r.work_date, r]));
-  const n = (f) => ws.filter(f).length, trips = ws.filter((r) => r.status === "work").reduce((s, r) => s + (QTRIPS[r.queue_code] || 0), 0);
+  const n = (f) => ws.filter(f).length, trips = ws.filter((r) => r.status === "work").reduce((s, r) => s + (QTRIPS[r.queue_code] || (typeof tripsOf === "function" ? tripsOf(r.queue_code).length : 0)), 0);
   const rows = days.map((d) => {
     const r = R[d], c = r && r.status === "work" ? vcode(r.vehicle_id) : "", sub = !!(r && (r.note || "").includes("แทน"));
     const st = !r ? `<span class="pk">ยังไม่จัด</span>` : { work: "ทำงาน", off: `<b class="offt">วันหยุด</b>`, standby: "สำรอง", leave: `<b class="offt">ลา${r.leave_type ? " · " + esc(r.leave_type) : ""}</b>` }[r.status];

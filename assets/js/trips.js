@@ -16,7 +16,7 @@ const TRIP_PAT = {
   "ศ830": "08:30HQ 11:00MRT 13:00MRT", // จ.–ศ. STC-03 ศิริราช 3 เที่ยว (เดิม R2)
   "สศ830": "08:30HQ 11:00MRT 13:00MRT 18:30R", // ส.–อา./นักขัตฤกษ์ STC-03 ศิริราช 3 เที่ยว + 18:30 สถานี รฟม. → ศูนย์ฯ (เพิ่ม 31 ต.ค. 2569)
 };
-const isSirirajQ = (qc) => qc === "ศ830" || qc === "สศ830"; // คิวของรถสายศิริราช (STC-03)
+const isSirirajQ = (qc) => /^ส?ศ/.test(qc || ""); // ศ830, สศ830 and adjusted copies (ศ830-2 …) // คิวของรถสายศิริราช (STC-03)
 const isSirirajTrip = (t) => !!t && (t.origin === ORIGIN.HQ || t.origin === ORIGIN.MRT); // เที่ยวนี้วิ่งเส้นศิริราชหรือไม่ (ดูจากต้นทาง)
 const tripsOf = (qc) => (TRIP_PAT[qc] || "").split(" ").filter(Boolean).map((s, i) => ({ no: i + 1, time: s.slice(0, 5), origin: ORIGIN[s.slice(5)] }));
 const LATE_MIN = 5; // บันทึกหลังเวลาออกเกินกี่นาทีถือว่าช้า
@@ -632,3 +632,84 @@ window.shiftCard = shiftCard; window.bindShift = bindShift;
 
 window.tripPage = tripPage;
 window.tripReport = tripReport;
+
+/* ===== queues adjusted by the manager (queue_patterns in the database) =====
+   Built-in TRIP_PAT stays the reference; codes made on "ปรับตารางเดินรถ" (e.g. ว730-3) are loaded at start. */
+const ORIGIN_K = Object.fromEntries(Object.entries(ORIGIN).map(([k, v]) => [v, k]));
+async function loadQueuePatterns() {
+  try {
+    const rows = await q(sb.from("queue_patterns").select("queue_code,trip_no,dep_time,origin").order("queue_code").order("trip_no"));
+    const by = {}; rows.forEach((r) => (by[r.queue_code] = by[r.queue_code] || []).push(String(r.dep_time).slice(0, 5) + (ORIGIN_K[r.origin] || "C")));
+    Object.entries(by).forEach(([c, l]) => { if (!TRIP_PAT[c]) TRIP_PAT[c] = l.join(" "); });
+  } catch (e) { /* offline or table missing: built-in queues still work */ }
+}
+window.loadQueuePatterns = loadQueuePatterns;
+
+/* ===== ปรับตารางเดินรถตามช่วงวันที่ (manager) =====
+   bus + date range + which current queue(s) to replace + trips (from a base queue: cut / add / change time) → set_queue_range */
+let QA = { vid: null, a: null, b: null, base: null, trips: null, rep: null };
+async function queuePage() {
+  if (!QA.vid) { const v = VEH.find((x) => x.code === "STC-02") || VEH[0]; QA.vid = v && v.id; }
+  if (!QA.a || QA.a < today()) QA.a = today();
+  if (!QA.b || QA.b < QA.a) { const x = dObj(QA.a); x.setDate(x.getDate() + 6); QA.b = iso(x); }
+  const rows = await q(sb.from("vehicle_queue").select("work_date,queue_code").eq("vehicle_id", QA.vid).gte("work_date", QA.a).lte("work_date", QA.b).order("work_date"));
+  const cnt = {}; rows.forEach((r) => (cnt[r.queue_code] = cnt[r.queue_code] || []).push(r.work_date));
+  const codes = Object.keys(cnt).sort((x, y) => cnt[y].length - cnt[x].length);
+  if (!QA.rep || !QA.rep.every((c) => cnt[c])) QA.rep = codes.slice(0, 1);
+  if (!QA.base || !TRIP_PAT[QA.base]) { QA.base = QA.rep[0] || Object.keys(TRIP_PAT)[0]; QA.trips = null; }
+  if (!QA.trips) QA.trips = tripsOf(QA.base).map((t) => ({ t: t.time, o: ORIGIN_K[t.origin] || "C" }));
+  const nDays = (QA.rep || []).reduce((s, c) => s + (cnt[c] ? cnt[c].length : 0), 0);
+  const daysTxt = (l) => l.length > 6 ? `${bk(l[0])} – ${bk(l[l.length - 1])}` : l.map((d) => `${DOW[dObj(d).getDay()]} ${dObj(d).getDate()}`).join(", ");
+  const baseL = tripsOf(QA.base).map((t) => t.time), cur = QA.trips.map((x) => x.t), cut = baseL.filter((t) => !cur.includes(t)), add = cur.filter((t) => !baseL.includes(t));
+  const OPT = [["C", "ศูนย์วัฒนธรรมฯ"], ["R", "สถานี รฟม."], ["HQ", "รฟม. สนญ."], ["MRT", "MRT อิสรภาพ"]];
+  main().innerHTML = `<p class="sm" style="margin:12px 0 0">เปลี่ยนคิวของรถ หรือ ตัด/เพิ่ม/เปลี่ยนเวลาเที่ยว ตามช่วงวันที่ · มีผลกับรายงานรอบเดินรถ, Manager Agent และหน้าคนขับ · วันที่ผ่านมาแล้วไม่เปลี่ยน</p>
+   <h2>1. รถ และช่วงวันที่</h2>
+   <div class="qa-bus">${VEH.map((v) => `<button data-v="${v.id}" class="${v.id === QA.vid ? "on" : ""}" style="--c:${COLOR[v.code] || "#1a64ff"}">${v.code}</button>`).join("")}</div>
+   <div class="grid" style="margin-top:8px"><div class="fld"><label for="qaA">วันเริ่มต้น</label><input id="qaA" type="date" min="${today()}" value="${QA.a}"></div><div class="fld"><label for="qaB">วันสุดท้าย</label><input id="qaB" type="date" min="${QA.a}" value="${QA.b}"></div></div>
+   <h2>2. คิวเดิมที่จะเปลี่ยน <small class="sm">(ในช่วงนี้รถใช้คิวต่อไปนี้)</small></h2>
+   ${codes.length ? `<div class="list">${codes.map((c) => `<label class="qa-q"><input type="checkbox" data-rep="${esc(c)}" ${QA.rep.includes(c) ? "checked" : ""}><span><b>${esc(c)}</b> · ${tripsOf(c).length || "?"} เที่ยว<br><small>${cnt[c].length} วัน: ${daysTxt(cnt[c])}</small></span></label>`).join("")}</div>
+     <p class="sm" style="margin:6px 0 0">วันที่ใช้คิวอื่น (เช่น เสาร์–อาทิตย์) หรือรถจอด จะไม่ถูกเปลี่ยน</p>` : `<div class="empty"><b>ไม่มีคิวของรถคันนี้ในช่วงนี้</b>รถจอดหรือยังไม่ได้จัดตาราง</div>`}
+   <h2>3. เที่ยวที่จะวิ่ง</h2>
+   <div class="fld"><label for="qaBase">เริ่มจากคิว</label><select id="qaBase">${Object.keys(TRIP_PAT).map((c) => `<option ${c === QA.base ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
+   <div class="qa-trips">${QA.trips.map((x, i) => `<div class="qa-t"><span class="num">${i + 1}</span><input type="time" data-t="${i}" value="${x.t}"><select data-o="${i}">${OPT.map(([k, l]) => `<option value="${k}" ${x.o === k ? "selected" : ""}>${l}</option>`).join("")}</select><button class="lnk" data-x="${i}" aria-label="ตัดเที่ยวนี้">✕ ตัด</button></div>`).join("")}</div>
+   <button class="btn block" id="qaAdd" style="margin-top:6px">+ เพิ่มเที่ยว</button>
+   <p class="notice" style="margin-top:10px">${QA.trips.length} เที่ยว · รอบแรก ${QA.trips[0] ? QA.trips[0].t : "–"}${cut.length ? ` · <b>ตัด</b> ${cut.join(", ")}` : ""}${add.length ? ` · <b>เพิ่ม/เปลี่ยนเป็น</b> ${add.join(", ")}` : ""}${!cut.length && !add.length ? ` · เหมือนคิว ${esc(QA.base)}` : ""}</p>
+   <p class="err" id="qaErr" hidden></p>
+   <button class="btn pri block" id="qaGo" ${nDays ? "" : "disabled"}>ตรวจก่อนบันทึก (${nDays} วัน)</button>`;
+  const re = () => queuePage();
+  main().querySelectorAll("[data-v]").forEach((b) => (b.onclick = () => { QA.vid = b.dataset.v; QA.rep = null; QA.base = null; re(); }));
+  $("qaA").onchange = (e) => { QA.a = e.target.value || today(); re(); };
+  $("qaB").onchange = (e) => { QA.b = e.target.value; re(); };
+  main().querySelectorAll("[data-rep]").forEach((c) => (c.onchange = () => { QA.rep = [...main().querySelectorAll("[data-rep]:checked")].map((x) => x.dataset.rep); re(); }));
+  $("qaBase").onchange = (e) => { QA.base = e.target.value; QA.trips = null; re(); };
+  const sort = () => QA.trips.sort((x, y) => x.t.localeCompare(y.t));
+  main().querySelectorAll("[data-t]").forEach((el) => (el.onchange = () => { if (el.value) { QA.trips[+el.dataset.t].t = el.value; sort(); } re(); }));
+  main().querySelectorAll("[data-o]").forEach((el) => (el.onchange = () => { QA.trips[+el.dataset.o].o = el.value; re(); }));
+  main().querySelectorAll("[data-x]").forEach((el) => (el.onclick = () => { QA.trips.splice(+el.dataset.x, 1); re(); }));
+  $("qaAdd").onclick = () => { const last = QA.trips[QA.trips.length - 1]; QA.trips.push({ t: last ? String(Math.min(23, +last.t.slice(0, 2) + 1)).padStart(2, "0") + ":00" : "07:30", o: last && last.o === "C" ? "R" : "C" }); sort(); re(); };
+  $("qaGo").onclick = () => queueConfirm();
+}
+async function queueConfirm() {
+  const err = $("qaErr"), b = $("qaGo"); err.hidden = true;
+  const ts = QA.trips.map((x) => x.t); if (!ts.length) { err.textContent = "ต้องมีอย่างน้อย 1 เที่ยว"; err.hidden = false; return; }
+  if (new Set(ts).size !== ts.length) { err.textContent = "มีเวลาออกซ้ำกัน"; err.hidden = false; return; }
+  const args = { p_vehicle: QA.vid, p_from: QA.a, p_to: QA.b, p_replace: QA.rep, p_base: QA.base, p_trips: QA.trips };
+  b.disabled = true; b.innerHTML = `<span class="spin"></span>กำลังตรวจ…`;
+  let r; try { r = await q(sb.rpc("set_queue_range", { ...args, p_dry: true })); }
+  catch (e) { const m = errMsg(e); err.textContent = /set_queue_range|function/.test(m) && !/[ก-๙]/.test(m) ? "ระบบปรับตารางเดินรถยังไม่เปิดใช้ (รอรัน SQL)" : m; err.hidden = false; b.disabled = false; b.textContent = "ตรวจก่อนบันทึก"; return; }
+  b.disabled = false; b.textContent = "ตรวจก่อนบันทึก";
+  const v = vById(QA.vid), s = $("sheet"), D = r.days || [], K = r.skipped || [];
+  s.innerHTML = `<div class="in"><div class="sh"><b>ปรับตารางเดินรถ ${v ? v.code : ""}</b><button class="lnk" id="shX">ปิด</button></div>
+    <p style="margin:0">คิวใหม่ <b>${esc(r.code)}</b>${r.is_new ? ` <span class="pill">สร้างใหม่</span>` : " (มีอยู่แล้ว)"} · ${r.trips} เที่ยว · รอบแรก ${r.first}</p>
+    <p class="sm">${tripsOf(r.code).length ? "" : QA.trips.map((x) => x.t).join(" · ")}</p>
+    <h2 style="margin-top:6px">เปลี่ยน ${D.length} วัน</h2><p class="sm" style="margin:0">${D.map((d) => `${DOW[dObj(d.date).getDay()]} ${bk(d.date)} (${esc(d.from)})`).join(" · ") || "–"}</p>
+    ${K.length ? `<h2 style="margin-top:8px">ไม่เปลี่ยน ${K.length} วัน</h2><p class="sm" style="margin:0">${K.map((d) => `${DOW[dObj(d.date).getDay()]} ${bk(d.date)} ${d.code ? `(${esc(d.code)})` : "(รถจอด)"}`).join(" · ")}</p>` : ""}
+    <p class="sm" style="margin-top:8px">ตารางงานของคนขับรถคันนี้ในวันดังกล่าวจะใช้คิวใหม่ด้วย</p>
+    <p class="err" id="qaE2" hidden></p><button class="btn pri block" id="qaOk" ${D.length ? "" : "disabled"}>ยืนยันปรับตาราง ${D.length} วัน</button><button class="btn block" id="qaCx">ยกเลิก</button></div>`;
+  s.hidden = false; $("shX").onclick = $("qaCx").onclick = () => (s.hidden = true);
+  $("qaOk").onclick = async () => { const ok = $("qaOk"); ok.disabled = true; ok.innerHTML = `<span class="spin"></span>กำลังบันทึก…`;
+    try { const x = await q(sb.rpc("set_queue_range", { ...args, p_dry: false })); if (x && x.code) TRIP_PAT[x.code] = TRIP_PAT[x.code] || QA.trips.map((t) => t.t + t.o).join(" ");
+      s.hidden = true; toast(`ปรับตารางแล้ว · ${v ? v.code : ""} ใช้คิว ${x.code} ${D.length} วัน`); QA.rep = null; QA.base = null; queuePage(); }
+    catch (e) { ok.disabled = false; ok.textContent = "ยืนยันปรับตาราง"; $("qaE2").textContent = errMsg(e); $("qaE2").hidden = false; } };
+}
+window.queuePage = queuePage;

@@ -113,6 +113,7 @@ async function boot() {
     PROFILE = await q(sb.from("profiles").select("*").eq("user_id", session.user.id).single());
     ME = await q(sb.rpc("my_today"));
     VEH = await q(sb.from("vehicles").select("*").order("code"));
+    if (window.loadQueuePatterns) await window.loadQueuePatterns();
   } catch (e) { main().innerHTML = `<p class="err">โหลดข้อมูลไม่ได้: ${esc(errMsg(e))}</p>`; return; }
   $("who").textContent = `${PROFILE.display_name || PROFILE.username} · ${ROLE_TH[PROFILE.role]}`;
   drawNav();
@@ -159,6 +160,7 @@ function drawNav() {
 }
 /* Tablet / PC: sidebar with every module the role may use, grouped like a platform */
 const SVG = {
+  queue: '<rect x="4" y="4" width="16" height="12" rx="2.5"/><path d="M4 10h16M8 19l-1.5 2M16 19l1.5 2M7.5 13h.01M16.5 13h.01"/><path d="M19 3.5l1.5 1.5-1.5 1.5"/>',
   home: '<path d="M4 11 12 4l8 7v8.5a.5.5 0 0 1-.5.5H15v-6H9v6H4.5a.5.5 0 0 1-.5-.5z"/>',
   trip: '<path d="M4 8.5h3l1.6-2.5h6.8L17 8.5h3v10H4z"/><circle cx="12" cy="13.2" r="3.4"/>',
   inspect: '<path d="M9 4h6v3H9z"/><rect x="5" y="5.5" width="14" height="15" rx="2"/><path d="M8.5 13l2.3 2.3L15.5 10.5"/>',
@@ -179,7 +181,7 @@ function sideItems() {
   const g = [
     ["ภาพรวม", [["home", "หน้าหลัก"], ["DRIVER", "MAINTENANCE"].includes(r) && ["alerts", "แจ้งเตือน"], mgr && ["agent", "Manager Agent", robot], mgr && ["report", "รายงานการชาร์จไฟฟ้า"], (mgr || cust) && ["tripreport", "รายงานรอบเดินรถ"]]],
     ["งานประจำวัน", [["trip", "รอบเดินรถ"], !cust && ["inspect", "ตรวจสภาพรถ"], !cust && ["charge", "บันทึกการชาร์จ"], !cust && ["maint", "ซ่อมบำรุง"], !cust && !mgr && ["maint/accident", "แจ้งอุบัติเหตุ", SVG.accident]]],
-    ["ข้อมูล", [mgr && ["drivers", "ข้อมูลคนขับ"], ["schedule", "ตารางงาน"], !cust && ["pdf", "ตารางงาน (PDF)"], ["vehicle", "ข้อมูลรถ"]]],
+    ["ข้อมูล", [mgr && ["drivers", "ข้อมูลคนขับ"], ["schedule", "ตารางงาน"], mgr && ["queue", "ปรับตารางเดินรถ"], !cust && ["pdf", "ตารางงาน (PDF)"], ["vehicle", "ข้อมูลรถ"]]],
     ["ช่วยเหลือ", [!cust && ["ai", "Smart AI ผู้ช่วย", robot], ["account", "บัญชีผู้ใช้"]]],
   ];
   return g.map(([h, xs]) => [h, xs.filter(Boolean)]).filter(([, xs]) => xs.length);
@@ -190,7 +192,7 @@ function drawSide() {
     <nav aria-label="เมนูทั้งหมด">${sideItems().map(([h, xs]) => `<p class="sgrp">${h}</p>` + xs.map(([k, l, ico]) => `<a href="#${k}" data-k="${k.split("/")[0]}"${k.includes("/") ? ` data-sub="${k}"` : ""} title="${l}">${ico && ico.startsWith("<img") ? ico : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${ico || SVG[k] || ""}</svg>`}<span>${l}</span></a>`).join("")).join("")}</nav>
     <div class="sme"><b>${esc(PROFILE.display_name || PROFILE.username)}</b><span>${ROLE_TH[PROFILE.role] || ""}</span></div>`;
 }
-const PAGES = { home, alerts, schedule, inspect, charge, maint, vehicle, report, account, password, trip: () => window.tripPage(), tripstops: () => window.tripStops(), tripreport: () => window.tripReport(), drivers: () => (window.driversPage ? window.driversPage() : Promise.reject(new Error("โหลดหน้าข้อมูลคนขับไม่สำเร็จ ลองเปิดแอพใหม่"))), ai: () => (window.aiPage ? window.aiPage() : Promise.reject(new Error("โหลด Smart AI ไม่สำเร็จ ลองเปิดแอพใหม่"))), agent: () => (window.agentPage ? window.agentPage() : Promise.reject(new Error("โหลดหน้า Manager Agent ไม่สำเร็จ ลองเปิดแอพใหม่"))), pdf: () => (window.pdfPage ? window.pdfPage() : Promise.reject(new Error("โหลดหน้าเอกสารไม่สำเร็จ ลองเปิดแอพใหม่"))) };
+const PAGES = { home, alerts, schedule, inspect, charge, maint, vehicle, report, account, password, trip: () => window.tripPage(), tripstops: () => window.tripStops(), tripreport: () => window.tripReport(), queue: () => window.queuePage(), drivers: () => (window.driversPage ? window.driversPage() : Promise.reject(new Error("โหลดหน้าข้อมูลคนขับไม่สำเร็จ ลองเปิดแอพใหม่"))), ai: () => (window.aiPage ? window.aiPage() : Promise.reject(new Error("โหลด Smart AI ไม่สำเร็จ ลองเปิดแอพใหม่"))), agent: () => (window.agentPage ? window.agentPage() : Promise.reject(new Error("โหลดหน้า Manager Agent ไม่สำเร็จ ลองเปิดแอพใหม่"))), pdf: () => (window.pdfPage ? window.pdfPage() : Promise.reject(new Error("โหลดหน้าเอกสารไม่สำเร็จ ลองเปิดแอพใหม่"))) };
 const STALE = "\u2063stale";
 function route() {
   $("sheet").hidden = true; $("viewer").hidden = true; // never leave a sheet over a different page
@@ -206,11 +208,11 @@ function route() {
   if (fixedPw && k === "password") k = "account";
   if (!fixedPw && PROFILE.must_change_password && k !== "password") k = "password";
   if (!PAGES[k]) k = "home";
-  if ((k === "report" || k === "agent" || k === "drivers") && !isMgr()) k = "home";
+  if ((k === "report" || k === "agent" || k === "drivers" || k === "queue") && !isMgr()) k = "home";
   document.querySelectorAll("#nav a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.k === k) || a.setAttribute("aria-current", a.dataset.k === k ? "page" : "false"));
   document.querySelectorAll("#nav a, #side a").forEach((a) => { const on = a.dataset.sub ? raw === a.dataset.sub : a.dataset.k === k && !(k === "maint" && raw.includes("accident") && a.closest("#side") && document.querySelector('#side a[data-sub="maint/accident"]')); if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
   main().dataset.page = k;
-  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", agent: "Manager Agent", alerts: "แจ้งเตือน", ai: "Smart AI ผู้ช่วย", drivers: "ข้อมูลคนขับ", pdf: "ตารางงาน (PDF)", trip: "รายงานรอบเดินรถ", tripstops: "บันทึกผู้โดยสาร", tripreport: "รายงานรอบเดินรถประจำเดือน", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
+  $("title").textContent = { home: "Smart Shuttle Bus EV", schedule: "ตารางปฏิบัติงาน", queue: "ปรับตารางเดินรถ", inspect: "ตรวจสภาพรถก่อนออกรถ", charge: "บันทึกการชาร์จไฟฟ้า", maint: "ประวัติการซ่อมบำรุง", vehicle: "ข้อมูลรถ", report: "รายงานการชาร์จไฟฟ้า", agent: "Manager Agent", alerts: "แจ้งเตือน", ai: "Smart AI ผู้ช่วย", drivers: "ข้อมูลคนขับ", pdf: "ตารางงาน (PDF)", trip: "รายงานรอบเดินรถ", tripstops: "บันทึกผู้โดยสาร", tripreport: "รายงานรอบเดินรถประจำเดือน", account: "บัญชีผู้ใช้", password: "ตั้งรหัสผ่านใหม่" }[k];
   scrollTo(0, 0);
   loading();
   PAGES[k]().catch((e) => { if (my === route.seq && !(e && e.message === STALE)) main().innerHTML = `<p class="err">${esc(errMsg(e))}</p>`; });
@@ -614,7 +616,8 @@ async function scheduleWeek() {
      return `<div class="swc ${c} ${d < t ? "past" : ""}" data-e="${e.id}" data-d="${d}" style="${r?.status === "work" && v ? `--c:${COLOR[v.code]}` : ""}" title="${esc(r?.note || "")}">${l}${r?.note && /แทน|สลับ/.test(r.note) ? "<i>•</i>" : ""}</div>`; }).join("")}`).join("")}</div>
    <p class="sm" style="margin:8px 0 0">ตัวเลข = รถ STC-0x · • = ขับแทน/สลับ · <b>สลับวันหยุด</b>: ลากช่อง "หยุด" ไปวางบนวันทำงานของคนเดียวกัน · <b>สลับงานสองคน</b>: ลากในวันเดียวกัน · วันที่ผ่านมาแล้วสลับไม่ได้</p>
    <div id="swBar" class="notice" style="margin-top:8px" hidden></div>
-   <a class="btn block" href="#pdf" style="margin-top:10px">ตารางงานประจำรอบ PDF · รวม / แยกรายคน</a>`;
+   <a class="btn block" href="#queue" style="margin-top:10px">🚌 ปรับตารางเดินรถ (คิวรถ) ตามช่วงวันที่</a>
+   <a class="btn block" href="#pdf" style="margin-top:8px">ตารางงานประจำรอบ PDF · รวม / แยกรายคน</a>`;
   bindSchedMode();
   const go = (n) => { const x = dObj(schedDay); x.setDate(x.getDate() + n); schedDay = iso(x); scheduleManager(); };
   $("wPrev").onclick = () => go(-7); $("wNext").onclick = () => go(7);
