@@ -87,7 +87,8 @@ function dHead(title, sub) {
 }
 function dFoot(p, n) { return `<footer class="df"><span>MRTA Shuttle Bus · ข้อมูลจากระบบ ณ ${bk(today())} ${nowHM()} น. · ${periodSpan(pdfMonth)}</span><span>หน้า ${p}/${n}</span></footer>`; }
 // signature block: blank space to sign → dotted line → (printed name) → role → date
-const dSign = (labels) => `<div class="dsign">${labels.map((l) => `<div class="sg"><div class="sg-sp"></div><div class="sg-ln"></div><div class="sg-nm">(.......................................................)</div><div class="sg-rl">${l}</div><div class="sg-dt">วันที่ ........../........../..........</div></div>`).join("")}</div>`;
+/* labels: "role" or { l: role, img: signature image, name } — a signature is printed only when the caller passes one */
+const dSign = (labels) => `<div class="dsign">${labels.map((x) => { const o = typeof x === "string" ? { l: x } : x, l = o.l; return `<div class="sg"><div class="sg-sp">${o.img ? `<img class="sg-im" src="${o.img}" alt="">` : ""}</div><div class="sg-ln"></div><div class="sg-nm">(${o.name ? esc(o.name) : "......................................................."})</div><div class="sg-rl">${l}</div><div class="sg-dt">วันที่ ........../........../..........</div></div>`; }).join("")}</div>`;
 const dnum = (d) => { const x = dObj(d); return x.getDate() === 26 || x.getDate() === 1 ? `${x.getDate()} ${MS[x.getMonth()]}` : x.getDate(); };
 const isWE = (d) => dObj(d).getDay() % 6 === 0;
 const CARS = ["STC-01", "STC-02", "STC-03", "STC-04"];
