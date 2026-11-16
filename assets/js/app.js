@@ -1432,7 +1432,7 @@ async function chargePdf(R, a, b, label, vc) {
       <h2>ค่าไฟฟ้ารายวันแยกรายคัน (บาท) <span style="font-size:10.5px;font-weight:400;color:#4a5a80">· ตามวันทำงาน: ชาร์จหลังเที่ยงคืนถึง 05:00 น. นับรวมกับวันก่อนหน้า (*)</span></h2><table class="dst"><thead><tr><th>วันที่</th>${BUS.map((c) => `<th class="r">${dot(c)}${c}</th>`).join("")}<th class="r">รวม</th></tr></thead><tbody>${dayRows}
         <tr><td><b>รวม</b></td>${BUS.map((c) => `<td class="r"><b>${fmt(sum(R.filter((r) => r.bus === c), (r) => r.amt))}</b></td>`).join("")}<td class="r"><b>${fmt(T)}</b></td></tr></tbody></table>
       ${R.some(wait) ? `<p class="dnote">รอแนบใบเสร็จ ${R.filter(wait).length} รายการ — ยอดเงินของรายการนี้ยังไม่รวมจนกว่าจะแนบใบเสร็จ</p>` : ""}
-      ${sign ? dSign(["ผู้จัดทำ", "ผู้ตรวจสอบ", vc && vc.sign ? { l: "ผู้อนุมัติ", img: "assets/img/signature.png", name: APPROVER } : "ผู้อนุมัติ"]) : ""}${foot(n, of)}`;
+      ${sign ? dSign(chargeSigners()) : ""}${foot(n, of)}`;
     // receipt list pages
     const lrow = (r, i) => `<tr><td class="c">${i + 1}</td><td>${bk(r.receipt_date)}${vcDay(r) !== r.receipt_date ? " *" : ""}</td><td>${r.started_at ? `${tHM(r.started_at)}–${tHM(r.ended_at)}` : "–"}</td><td>${dot(r.bus)}${r.bus}</td><td>${r.receipt_no || (wait(r) ? `<span style="color:#e67700">รอใบเสร็จ</span>` : "–")}</td><td>${esc(nm(r.employee_id))}</td><td class="r">${r.soc_before != null ? `${r.soc_before}→${r.soc_after}%` : "–"}</td><td class="r">${r.kwh ? fmt(r.kwh, 2) : "–"}</td><td class="r">${r.amt ? fmt(r.amt) : "–"}</td></tr>`;
     const PER = 44, chunks = [];
@@ -1445,7 +1445,7 @@ async function chargePdf(R, a, b, label, vc) {
     const imgs = await receiptImgs(R, (i, n) => (btn.innerHTML = `<span class="spin"></span> โหลดภาพใบเสร็จ ${i}/${n}…`));
     const rcPages = imgs.list.length ? rcLayout(imgs.list, imgs.miss) : [];
     of += rcPages.length;
-    const pages = [summary(1, of, chunks.length === 0)].concat(chunks.map((c, i) => `${head(i + 2, of)}<h2>รายการชาร์จและใบเสร็จ ${i ? "(ต่อ)" : ""}</h2><table class="dst">${lhead}<tbody>${c.join("")}${i === chunks.length - 1 ? `<tr><td colspan="7"><b>รวม ${R.length} รายการ</b></td><td class="r"><b>${fmt(K, 2)}</b></td><td class="r"><b>${fmt(T)}</b></td></tr>` : ""}</tbody></table>${i === chunks.length - 1 ? dSign(["ผู้จัดทำ", "ผู้ตรวจสอบ", vc && vc.sign ? { l: "ผู้อนุมัติ", img: "assets/img/signature.png", name: APPROVER } : "ผู้อนุมัติ"]) : ""}${foot(i + 2, of)}`))
+    const pages = [summary(1, of, chunks.length === 0)].concat(chunks.map((c, i) => `${head(i + 2, of)}<h2>รายการชาร์จและใบเสร็จ ${i ? "(ต่อ)" : ""}</h2><table class="dst">${lhead}<tbody>${c.join("")}${i === chunks.length - 1 ? `<tr><td colspan="7"><b>รวม ${R.length} รายการ</b></td><td class="r"><b>${fmt(K, 2)}</b></td><td class="r"><b>${fmt(T)}</b></td></tr>` : ""}</tbody></table>${i === chunks.length - 1 ? dSign(chargeSigners()) : ""}${foot(i + 2, of)}`))
       .concat(rcPages.map((fn, i) => fn(head(chunks.length + 2 + i, of), foot(chunks.length + 2 + i, of), i, rcPages.length)));
     const W = 794, H = 1123, fname = vc ? `MRTA_payment_voucher_${a}_${b}.pdf` : `MRTA_charging_${a}_${b}.pdf`;
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
@@ -1519,33 +1519,36 @@ function voucherPage(R, vc) {
   const adv = vc.adv > 0 ? vc.adv : null, diff = adv != null ? Math.round((adv - tot) * 100) / 100 : null;
   const N = Math.max(15, days.length), cols = ["คชจ.ยานพาหนะ", "คชจ.เดินทาง", "ค่าเลี้ยงรับรอง", "คชจ.เบ็ดเตล็ด", "คชจ.อื่นๆ", "ภาษีซื้อ", "ภาษีหัก ณ ที่จ่าย"];
   const rows = Array.from({ length: N }, (_, i) => { const r = days[i]; return `<tr><td class="c">${r ? dmy(r.d) : ""}</td><td>${r ? `ค่าชาร์จไฟรถบัส ${VEH.length} คัน` : ""}</td>${cols.map(() => "<td></td>").join("")}<td class="r">${r ? fmt(r.amt) : ""}</td></tr>`; }).join("");
-  const sg = (role, signed) => `<div class="pv-sg">${signed ? `<img class="pv-im" src="assets/img/signature.png" alt="">` : ""}<div>ลงชื่อ ........................................ ${role}</div><div>( ${signed ? esc(APPROVER) : "........................................"} )</div></div>`;
+  const sg = (role, name, signed) => `<div class="pv-sg">${signed ? `<img class="pv-im" src="assets/img/signature.png" alt="">` : ""}<div>ลงชื่อ ........................................ ${role}</div><div>( ${name ? esc(name) : "........................................"} )</div></div>`;
   return `<div class="pv-top"><div></div><div class="pv-title"><b>ใบสำคัญจ่าย</b><span>บริษัท สมาร์ท เทอร์มินอล คอร์ปอเรชั่น จำกัด</span></div>
       <div class="pv-doc"><table><tr><td>หมายเลขเอกสาร</td><td>AC-FM-007</td></tr><tr><td>แก้ไขครั้งที่</td><td>0</td></tr><tr><td>วันที่บังคับใช้</td><td>1/8/2561</td></tr></table>
         <div class="pv-money"><div><span>เงินทดรองจ่าย</span><b>${adv != null ? fmt(adv) : ""}</b></div><div><span>จ่ายทั้งสิ้น</span><b>${fmt(tot)}</b></div><div><span>คืนเงินบริษัท/(บริษัทจ่ายเพิ่ม)</span><b>${diff == null ? "" : diff >= 0 ? fmt(diff) : `(${fmt(-diff)})`}</b></div></div></div></div>
     <div class="pv-who"><span>ชื่อ <u>${esc(vc.name || "")}</u></span><span>โครงการ <u>${esc(vc.proj || "")}</u></span><span>ตั้งแต่ <u>${days.length ? thai(days[0].d) : ""}</u></span><span>ถึง <u>${days.length ? thai(days[days.length - 1].d) : ""}</u></span></div>
     <table class="pv-t"><thead><tr><th style="width:78px">วัน/เดือน/ปี</th><th>รายการ</th>${cols.map((c) => `<th style="width:80px">${c.replace("คชจ.", "คชจ.<br>").replace("ค่าเลี้ยง", "ค่าเลี้ยง<br>").replace("ภาษีหัก ณ", "ภาษีหัก ณ<br>")}</th>`).join("")}<th style="width:96px">รวมเงิน</th></tr></thead>
       <tbody>${rows}<tr class="pv-tot"><td colspan="9" class="r"><b>รวมทั้งสิ้น</b></td><td class="r"><b>${fmt(tot)}</b></td></tr></tbody></table>
-    <div class="pv-sgs">${sg("ผู้เบิก")}${sg("ผู้อนุมัติ", vc && vc.sign)}${sg("ผู้จ่าย")}${sg("ผู้รับ")}</div>
+    <div class="pv-sgs">${sg("ผู้เบิก", vc && vc.name)}${sg("ผู้อนุมัติ", APPROVER, true)}${sg("ผู้จ่าย")}${sg("ผู้รับ")}</div>
     <p class="pv-note">แนบ: รายงานค่าไฟฟ้าการชาร์จรถโดยสารไฟฟ้า MRTA Shuttle Bus พร้อมรายการใบเสร็จ · ยอดรวม VAT ตามใบเสร็จ · การชาร์จหลังเที่ยงคืนถึง 05:00 น. นับรวมกับวันทำงานก่อนหน้า</p>`;
 }
 /* approver of the charging report (manager's own signature + company seal, 16 พ.ย. 2569) */
 const APPROVER = "พงศ์พล รัตนชูชัย";
+// fixed people on every charging report (manager, 16 พ.ย. 2569)
+const REQUESTER = "นายกิติ ค้าเกษตร", CHECKER = "นางจริยา เพชรวรานนท์";
+const chargeSigners = () => [{ l: "ผู้ขอเบิก", name: REQUESTER }, { l: "ผู้ตรวจสอบ", name: CHECKER }, { l: "ผู้อนุมัติ", img: "assets/img/signature.png", name: "นาย" + APPROVER }];
 function voucherSheet(R, a, b, label) {
   const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k) || ""; localStorage.setItem(k, v); } catch (e) { return ""; } };
   const days = voucherDays(R), tot = days.reduce((x, r) => x + r.amt, 0), wait = R.filter((r) => r.source === "app" && !r.receipt_path).length;
   const s = $("sheet");
   s.innerHTML = `<div class="in"><div class="sh"><b>รายงาน PDF ค่าไฟฟ้า + ใบสำคัญจ่าย · ${esc(label)}</b><button class="lnk" id="shX">ปิด</button></div>
     <p class="sm" style="margin:0">${days.length} วัน · จ่ายทั้งสิ้น <b class="num">${fmt(tot)}</b> บาท${wait ? ` · <span style="color:var(--warn)">รอแนบใบเสร็จ ${wait} รายการ (ยังไม่รวมในยอด)</span>` : ""}</p>
-    <div class="grid"><div class="fld full"><label for="vcN">ชื่อผู้เบิก</label><input id="vcN" value="${esc(ls("vc_name"))}" placeholder="ชื่อ-นามสกุล"></div>
+    <div class="grid"><div class="fld full"><label for="vcN">ชื่อผู้เบิก</label><input id="vcN" value="${esc(REQUESTER)}" placeholder="ชื่อ-นามสกุล"></div>
       <div class="fld"><label for="vcP">โครงการ</label><input id="vcP" value="${esc(ls("vc_proj") || "118")}"></div>
       <div class="fld"><label for="vcA">เงินทดรองจ่าย (บาท) ถ้ามี</label><input id="vcA" class="num" inputmode="decimal" placeholder="เว้นว่างได้"></div></div>
-    <label class="chk" style="display:flex;gap:10px;align-items:center;margin:4px 0"><input type="checkbox" id="vcS" ${ls("vc_sign") === "0" ? "" : "checked"} style="width:20px;height:20px"><span>ลงนามผู้อนุมัติในรายงาน (ลายเซ็นและตราประทับ ${APPROVER})</span></label>
+    <p class="sm" style="margin:4px 0">ลงนาม: ผู้ขอเบิก ${REQUESTER} · ผู้ตรวจสอบ ${CHECKER} · ผู้อนุมัติ ${APPROVER} (ลายเซ็นและตราประทับ)</p>
     <p class="sm" style="margin:0">PDF = ใบสำคัญจ่าย (หน้า 1) + รายงานค่าไฟฟ้าและรายการใบเสร็จ + ภาพใบเสร็จทุกใบ (ไม่เกิน 2 หน้า)</p>
     <button class="btn pri block" id="vcGo">สร้าง PDF</button></div>`;
   s.hidden = false; $("shX").onclick = () => (s.hidden = true);
-  $("vcGo").onclick = () => { const vc = { name: $("vcN").value.trim(), proj: $("vcP").value.trim(), adv: parseFloat(String($("vcA").value).replace(/,/g, "")) || 0, only: false, sign: $("vcS").checked };
-    ls("vc_sign", vc.sign ? "1" : "0"); ls("vc_name", vc.name); ls("vc_proj", vc.proj); s.hidden = true; chargePdf(R, a, b, label, vc); };
+  $("vcGo").onclick = () => { const vc = { name: $("vcN").value.trim(), proj: $("vcP").value.trim(), adv: parseFloat(String($("vcA").value).replace(/,/g, "")) || 0, only: false, sign: true };
+    ls("vc_name", vc.name); ls("vc_proj", vc.proj); s.hidden = true; chargePdf(R, a, b, label, vc); };
 }
 /* charging details per vehicle (managers/admin): every charge with times, battery, kWh, amount, driver and the receipt file */
 async function chargeSheet(bus, list, label) {
