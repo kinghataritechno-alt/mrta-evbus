@@ -1519,14 +1519,14 @@ function voucherPage(R, vc) {
   const adv = vc.adv > 0 ? vc.adv : null, diff = adv != null ? Math.round((adv - tot) * 100) / 100 : null;
   const N = Math.max(15, days.length), cols = ["คชจ.ยานพาหนะ", "คชจ.เดินทาง", "ค่าเลี้ยงรับรอง", "คชจ.เบ็ดเตล็ด", "คชจ.อื่นๆ", "ภาษีซื้อ", "ภาษีหัก ณ ที่จ่าย"];
   const rows = Array.from({ length: N }, (_, i) => { const r = days[i]; return `<tr><td class="c">${r ? dmy(r.d) : ""}</td><td>${r ? `ค่าชาร์จไฟรถบัส ${VEH.length} คัน` : ""}</td>${cols.map(() => "<td></td>").join("")}<td class="r">${r ? fmt(r.amt) : ""}</td></tr>`; }).join("");
-  const sg = (role) => `<div class="pv-sg"><div>ลงชื่อ ........................................ ${role}</div><div>( ........................................ )</div></div>`;
+  const sg = (role, signed) => `<div class="pv-sg">${signed ? `<img class="pv-im" src="assets/img/signature.png" alt="">` : ""}<div>ลงชื่อ ........................................ ${role}</div><div>( ${signed ? esc(APPROVER) : "........................................"} )</div></div>`;
   return `<div class="pv-top"><div></div><div class="pv-title"><b>ใบสำคัญจ่าย</b><span>บริษัท สมาร์ท เทอร์มินอล คอร์ปอเรชั่น จำกัด</span></div>
       <div class="pv-doc"><table><tr><td>หมายเลขเอกสาร</td><td>AC-FM-007</td></tr><tr><td>แก้ไขครั้งที่</td><td>0</td></tr><tr><td>วันที่บังคับใช้</td><td>1/8/2561</td></tr></table>
         <div class="pv-money"><div><span>เงินทดรองจ่าย</span><b>${adv != null ? fmt(adv) : ""}</b></div><div><span>จ่ายทั้งสิ้น</span><b>${fmt(tot)}</b></div><div><span>คืนเงินบริษัท/(บริษัทจ่ายเพิ่ม)</span><b>${diff == null ? "" : diff >= 0 ? fmt(diff) : `(${fmt(-diff)})`}</b></div></div></div></div>
     <div class="pv-who"><span>ชื่อ <u>${esc(vc.name || "")}</u></span><span>โครงการ <u>${esc(vc.proj || "")}</u></span><span>ตั้งแต่ <u>${days.length ? thai(days[0].d) : ""}</u></span><span>ถึง <u>${days.length ? thai(days[days.length - 1].d) : ""}</u></span></div>
     <table class="pv-t"><thead><tr><th style="width:78px">วัน/เดือน/ปี</th><th>รายการ</th>${cols.map((c) => `<th style="width:80px">${c.replace("คชจ.", "คชจ.<br>").replace("ค่าเลี้ยง", "ค่าเลี้ยง<br>").replace("ภาษีหัก ณ", "ภาษีหัก ณ<br>")}</th>`).join("")}<th style="width:96px">รวมเงิน</th></tr></thead>
       <tbody>${rows}<tr class="pv-tot"><td colspan="9" class="r"><b>รวมทั้งสิ้น</b></td><td class="r"><b>${fmt(tot)}</b></td></tr></tbody></table>
-    <div class="pv-sgs">${sg("ผู้เบิก")}${sg("ผู้อนุมัติ")}${sg("ผู้จ่าย")}${sg("ผู้รับ")}</div>
+    <div class="pv-sgs">${sg("ผู้เบิก")}${sg("ผู้อนุมัติ", vc && vc.sign)}${sg("ผู้จ่าย")}${sg("ผู้รับ")}</div>
     <p class="pv-note">แนบ: รายงานค่าไฟฟ้าการชาร์จรถโดยสารไฟฟ้า MRTA Shuttle Bus พร้อมรายการใบเสร็จ · ยอดรวม VAT ตามใบเสร็จ · การชาร์จหลังเที่ยงคืนถึง 05:00 น. นับรวมกับวันทำงานก่อนหน้า</p>`;
 }
 /* approver of the charging report (manager's own signature + company seal, 16 พ.ย. 2569) */

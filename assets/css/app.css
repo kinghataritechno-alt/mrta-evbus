@@ -567,3 +567,4 @@ table.trm tr.tr-tot td{border-top:2px solid var(--line);background:rgba(31,194,2
 .qa-t{display:grid;grid-template-columns:26px 104px 1fr auto;gap:6px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 8px}
 .qa-t span{color:var(--muted);text-align:center}.qa-t input,.qa-t select{min-height:38px;font:inherit}.qa-t .lnk{color:var(--bad,#e5484d)}
 .doc .sg-sp{position:relative}.doc .sg-im{position:absolute;left:50%;bottom:-3px;transform:translateX(-50%);height:74px;width:auto;pointer-events:none}
+.doc .pv-sg{position:relative}.doc .pv-sgs:has(.pv-im){margin-top:46px}.doc .pv-im{position:absolute;left:50%;bottom:16px;transform:translateX(-40%);height:62px;width:auto;pointer-events:none}
