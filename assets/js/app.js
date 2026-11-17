@@ -1440,25 +1440,26 @@ async function chargePdf(R, a, b, label, vc) {
     for (let i = 0; i < rows.length; i += PER) chunks.push(rows.slice(i, i + PER));
     let of = 1 + chunks.length;
     const lhead = `<thead><tr><th class="c">#</th><th>วันที่</th><th>เวลาชาร์จ</th><th>รถ</th><th>เลขที่ใบเสร็จ</th><th>ผู้บันทึก</th><th class="r">แบต</th><th class="r">kWh</th><th class="r">บาท</th></tr></thead>`;
-    // receipt images (every attached receipt in the range) · fitted onto at most 2 pages
+    // receipt images (every attached receipt in the range) · one per landscape page
     btn.innerHTML = `<span class="spin"></span> กำลังโหลดภาพใบเสร็จ…`;
     const imgs = await receiptImgs(R, (i, n) => (btn.innerHTML = `<span class="spin"></span> โหลดภาพใบเสร็จ ${i}/${n}…`));
     const rcPages = imgs.list.length ? rcLayout(imgs.list, imgs.miss) : [];
     of += rcPages.length;
     const pages = [summary(1, of, chunks.length === 0)].concat(chunks.map((c, i) => `${head(i + 2, of)}<h2>รายการชาร์จและใบเสร็จ ${i ? "(ต่อ)" : ""}</h2><table class="dst">${lhead}<tbody>${c.join("")}${i === chunks.length - 1 ? `<tr><td colspan="7"><b>รวม ${R.length} รายการ</b></td><td class="r"><b>${fmt(K, 2)}</b></td><td class="r"><b>${fmt(T)}</b></td></tr>` : ""}</tbody></table>${i === chunks.length - 1 ? dSign(chargeSigners()) : ""}${foot(i + 2, of)}`))
-      .concat(rcPages.map((fn, i) => fn(head(chunks.length + 2 + i, of), foot(chunks.length + 2 + i, of), i, rcPages.length)));
+      .map((html) => ({ html, land: false }))
+      .concat(rcPages.map((pg, i) => ({ html: pg.fn(head(chunks.length + 2 + i, of), foot(chunks.length + 2 + i, of)), land: true, rc: true })));
     const W = 794, H = 1123, fname = vc ? `MRTA_payment_voucher_${a}_${b}.pdf` : `MRTA_charging_${a}_${b}.pdf`;
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
     // voucher (landscape, accounting form AC-FM-007) first, then the report pages (portrait) unless "voucher only"
-    const parts = (vc ? [{ html: voucherPage(R, vc), land: true }] : []).concat(vc && vc.only ? [] : pages.map((html) => ({ html, land: false })));
+    const parts = (vc ? [{ html: voucherPage(R, vc), land: true }] : []).concat(vc && vc.only ? [] : pages);
     stage = document.createElement("div"); stage.style.cssText = `position:fixed;left:-20000px;top:0;width:1123px;background:#fff`;
-    stage.innerHTML = parts.map((pt) => `<div class="doc" style="width:${pt.land ? 1123 : W}px"><section class="dpg${pt.land ? " pv" : ""}" style="width:${pt.land ? 1123 : W}px;height:${pt.land ? 794 : H}px;margin:0;box-shadow:none">${pt.html}</section></div>`).join("");
+    stage.innerHTML = parts.map((pt) => `<div class="doc" style="width:${pt.land ? 1123 : W}px"><section class="dpg${pt.land && !pt.rc ? " pv" : ""}" style="width:${pt.land ? 1123 : W}px;height:${pt.land ? 794 : H}px;margin:0;box-shadow:none">${pt.html}</section></div>`).join("");
     document.body.appendChild(stage);
     const els = [...stage.children];
     let wk = null;
     parts.forEach((pt, i) => {
       const w = pt.land ? 1123 : W, h = pt.land ? 794 : H, ori = pt.land ? "landscape" : "portrait";
-      const opt = { margin: 0, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: Math.max(w, window.innerWidth), scrollX: 0, scrollY: 0 }, jsPDF: { unit: "px", format: [w, h], orientation: ori, hotfixes: ["px_scaling"] }, pagebreak: { mode: [] } };
+      const opt = { margin: 0, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: pt.rc ? 3 : 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: Math.max(w, window.innerWidth), scrollX: 0, scrollY: 0 }, jsPDF: { unit: "px", format: [w, h], orientation: ori, hotfixes: ["px_scaling"] }, pagebreak: { mode: [] } };
       wk = i === 0 ? html2pdf().set(opt).from(els[i]).toPdf() : wk.set(opt).get("pdf").then((pdf) => pdf.addPage([w, h], ori)).from(els[i]).toContainer().toCanvas().toPdf();
     });
     const blob = await wk.outputPdf("blob");
@@ -1473,7 +1474,7 @@ async function receiptImgs(R, step) {
   if (!L.length || !window.receiptImage) return { list: out, miss, fail: 0 };
   const { data } = await sb.storage.from(CFG.bucket).createSignedUrls(L.map((r) => r.receipt_path), 600).catch(() => ({ data: [] }));
   const url = {}; (data || []).forEach((x) => { if (x && x.signedUrl && x.path) url[x.path] = x.signedUrl; });
-  const px = L.length <= 6 ? 1400 : L.length <= 20 ? 1000 : 700; let done = 0, fail = 0;
+  const px = 1800; let done = 0, fail = 0;
   const one = async (r) => {
     try { const u = url[r.receipt_path]; if (!u) throw 0; const res = await fetch(u); if (!res.ok) throw 0; const b = await res.blob();
       const im = await window.receiptImage(b, /\.pdf$/i.test(r.receipt_path) || b.type === "application/pdf", px); out.push({ r, ...im }); }
@@ -1484,24 +1485,23 @@ async function receiptImgs(R, step) {
   const ord = new Map(L.map((r, i) => [r.id, i])); out.sort((a, b) => ord.get(a.r.id) - ord.get(b.r.id));
   return { list: out, miss, fail };
 }
-/* lay the receipt images out on 1 page (≤ 6) or 2 pages: pick the column count that gives each receipt the largest size */
+/* receipt images: one receipt per A4 landscape page, as accounting asks (17 พ.ย. 2569) · RC_PER 4 = 2 × 2 grid */
+const RC_PER = 1;
 function rcLayout(list, miss) {
-  const nPg = list.length <= 6 ? 1 : 2, per = Math.ceil(list.length / nPg), W = 794 - 68, GAP = 6, two = per > 6, CAP = two ? 24 : 14;
-  const probe = document.createElement("div"); probe.className = "doc"; probe.style.cssText = "position:fixed;left:-20000px;top:0;width:794px";
-  probe.innerHTML = `<section class="dpg" style="width:794px">${dHead("x", "x")}<h2>x</h2></section>`; document.body.appendChild(probe);
+  const PW = 1123, PH = 794, W = PW - 68, GAP = 10, CAP = 18, nPg = Math.ceil(list.length / RC_PER);
+  const probe = document.createElement("div"); probe.className = "doc"; probe.style.cssText = `position:fixed;left:-20000px;top:0;width:${PW}px`;
+  probe.innerHTML = `<section class="dpg" style="width:${PW}px">${dHead("x", "x")}<h2>x</h2></section>`; document.body.appendChild(probe);
   const top = probe.firstChild.offsetHeight - 40 + 6; probe.remove(); // .dpg has 40px bottom padding
-  const avH = 1123 - top - 40, ars = list.map((x) => x.w / x.h).sort((a, b) => a - b), ar = ars[Math.floor(ars.length / 2)] || 0.75;
+  const NC = RC_PER === 1 ? 1 : 2, NR = Math.ceil(RC_PER / NC), cw = (W - GAP * (NC - 1)) / NC, ch = (PH - top - 40 - GAP * (NR - 1)) / NR - (RC_PER === 1 ? 26 : CAP);
+  const capH = RC_PER === 1 ? 26 : CAP, capF = RC_PER === 1 ? 14 : 11;
   return Array.from({ length: nPg }, (_, p) => {
-    const L = list.slice(p * per, (p + 1) * per), n = L.length; let best = null;
-    for (let c = 1; c <= n; c++) { const rows = Math.ceil(n / c), cw = (W - (c - 1) * GAP) / c, ch = (avH - (rows - 1) * GAP) / rows - CAP, s = Math.min(cw, ch * ar) * Math.min(cw / ar, ch);
-      if (!best || s > best.s) best = { c, rows, cw, ch, s }; }
-    const { c, rows, cw, ch } = best;
-    const cells = L.map((x, i) => { const k = Math.min(cw / x.w, ch / x.h), iw = Math.floor(x.w * k), ih = Math.floor(x.h * k), r = x.r, gi = p * per + i + 1;
-      return `<div style="width:${cw}px;height:${ch + CAP}px;display:flex;flex-direction:column;align-items:center;border:1px solid #dde3f1;box-sizing:border-box;overflow:hidden">
-        <div style="height:${CAP}px;line-height:${two ? 11 : 14}px;padding-top:${two ? 1 : 0}px;box-sizing:border-box;font-size:${cw < 120 ? 7.5 : 9}px;color:#0f1b3d;white-space:nowrap;overflow:hidden;width:100%;text-align:center;background:#f3f6fc"><b>${gi}. ${r.bus}</b> · ${bk(r.receipt_date)}${two ? "<br>" : " · "}${r.receipt_no || "–"}${r.amt ? ` · ${fmt(r.amt)} ฿` : ""}</div>
-        <div style="flex:1;display:flex;align-items:center;justify-content:center;width:100%">${x.url ? `<img src="${x.url}" style="width:${iw - 2}px;height:${ih - 2}px;display:block">` : `<span style="font-size:10px;color:#c92a2a">เปิดไฟล์ใบเสร็จไม่ได้</span>`}</div></div>`; }).join("");
-    return (head, foot, i, of) => `${head}<h2>ภาพใบเสร็จ ${list.length} ใบ${of > 1 ? ` (ส่วนที่ ${i + 1}/${of})` : ""}${miss && i === 0 ? ` <span style="font-size:10.5px;font-weight:400;color:#4a5a80">· ไม่มีไฟล์ภาพ ${miss} รายการ</span>` : ""}</h2>
-      <div style="position:absolute;left:34px;right:34px;top:${top}px;display:grid;grid-template-columns:repeat(${c},${cw}px);grid-auto-rows:${ch + CAP}px;gap:${GAP}px">${cells}</div>${foot}`;
+    const L = list.slice(p * RC_PER, (p + 1) * RC_PER);
+    const cells = L.map((x, i) => { const k = Math.min(cw / x.w, ch / x.h), iw = Math.floor(x.w * k), ih = Math.floor(x.h * k), r = x.r, gi = p * RC_PER + i + 1;
+      return `<div style="width:${cw}px;height:${ch + capH}px;display:flex;flex-direction:column;align-items:center;border:1px solid #c9d2e6;box-sizing:border-box;overflow:hidden">
+        <div style="height:${capH}px;line-height:${capH}px;font-size:${capF}px;color:#0f1b3d;white-space:nowrap;overflow:hidden;width:100%;text-align:center;background:#eef2fa"><b>${gi}. ${r.bus}</b> · ${bk(r.receipt_date)} · ${r.receipt_no || "–"}${r.amt ? ` · ${fmt(r.amt)} บาท` : ""}${r.kwh ? ` · ${fmt(r.kwh, 2)} kWh` : ""}</div>
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;width:100%">${x.url ? `<img src="${x.url}" style="width:${iw - 2}px;height:${ih - 2}px;display:block">` : `<span style="font-size:12px;color:#c92a2a">เปิดไฟล์ใบเสร็จไม่ได้</span>`}</div></div>`; }).join("");
+    return { land: true, fn: (head, foot) => `${head}<h2>ภาพใบเสร็จ ใบที่ ${RC_PER === 1 ? p + 1 : `${p * RC_PER + 1}–${p * RC_PER + L.length}`} จาก ${list.length}${miss && p === 0 ? ` <span style="font-size:11px;font-weight:400;color:#4a5a80">· ไม่มีไฟล์ภาพ ${miss} รายการ</span>` : ""}</h2>
+      <div style="position:absolute;left:34px;top:${top}px;display:grid;grid-template-columns:repeat(${NC},${cw}px);grid-auto-rows:${ch + capH}px;gap:${GAP}px">${cells}</div>${foot}` };
   });
 }
 /* ---------- ใบสำคัญจ่าย (AC-FM-007) — cover sheet for the petty-cash (เงินทดรองจ่าย) claim of charging costs ----------
@@ -1544,7 +1544,7 @@ function voucherSheet(R, a, b, label) {
       <div class="fld"><label for="vcP">โครงการ</label><input id="vcP" value="${esc(ls("vc_proj") || "118")}"></div>
       <div class="fld"><label for="vcA">เงินทดรองจ่าย (บาท) ถ้ามี</label><input id="vcA" class="num" inputmode="decimal" placeholder="เว้นว่างได้"></div></div>
     <p class="sm" style="margin:4px 0">ลงนาม: ผู้ขอเบิก ${REQUESTER} · ผู้ตรวจสอบ ${CHECKER} · ผู้อนุมัติ ${APPROVER} (ลายเซ็นและตราประทับ)</p>
-    <p class="sm" style="margin:0">PDF = ใบสำคัญจ่าย (หน้า 1) + รายงานค่าไฟฟ้าและรายการใบเสร็จ + ภาพใบเสร็จทุกใบ (ไม่เกิน 2 หน้า)</p>
+    <p class="sm" style="margin:0">PDF = ใบสำคัญจ่าย (หน้า 1) + รายงานค่าไฟฟ้าและรายการใบเสร็จ + ภาพใบเสร็จทุกใบ (ใบละหน้า)</p>
     <button class="btn pri block" id="vcGo">สร้าง PDF</button></div>`;
   s.hidden = false; $("shX").onclick = () => (s.hidden = true);
   $("vcGo").onclick = () => { const vc = { name: $("vcN").value.trim(), proj: $("vcP").value.trim(), adv: parseFloat(String($("vcA").value).replace(/,/g, "")) || 0, only: false, sign: true };

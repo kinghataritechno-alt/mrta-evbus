@@ -84,11 +84,35 @@
       const doc = await pdfjsLib.getDocument({ data: await blob.arrayBuffer() }).promise, pg = await doc.getPage(1), vp = pg.getViewport({ scale: 2 });
       src = document.createElement("canvas"); src.width = vp.width; src.height = vp.height; await pg.render({ canvasContext: src.getContext("2d"), viewport: vp }).promise; }
     else src = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error("img")); i.src = URL.createObjectURL(blob); });
-    const w = src.naturalWidth || src.width, h = src.naturalHeight || src.height, sc = Math.min(1, maxPx / Math.max(w, h));
-    const c = document.createElement("canvas"); c.width = Math.round(w * sc); c.height = Math.round(h * sc);
-    const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(src, 0, 0, c.width, c.height);
+    const w0 = src.naturalWidth || src.width, h0 = src.naturalHeight || src.height;
+    // 1) look at a small copy: paper area (trim the white border) and where the orange MEA logo is
+    const SM = 360, ss = SM / Math.max(w0, h0), sw = Math.max(1, Math.round(w0 * ss)), sh = Math.max(1, Math.round(h0 * ss));
+    const t = document.createElement("canvas"); t.width = sw; t.height = sh; const tx = t.getContext("2d"); tx.drawImage(src, 0, 0, sw, sh);
+    const px = tx.getImageData(0, 0, sw, sh).data, col = new Float32Array(sw), row = new Float32Array(sh), ink = new Uint8Array(sw * sh); let ox = 0, oy = 0, on = 0;
+    for (let yy = 0; yy < sh; yy++) for (let xx = 0; xx < sw; xx++) { const k = (yy * sw + xx) * 4, r = px[k], g = px[k + 1], b = px[k + 2];
+      if ((r + g + b) / 3 < 160) { ink[yy * sw + xx] = 1; col[xx]++; row[yy]++; }
+      if (r > 170 && g > 70 && g < 190 && b < 130 && r - b > 80) { ox += xx; oy += yy; on++; } }
+    // paper area = columns/rows that hold some ink but are not scanner edges or shadows (> 60 % ink)
+    const span = (a, n) => { let lo = -1, hi = -1; for (let q = 0; q < a.length; q++) { const f = a[q] / n; if (f > 0.004 && f < 0.6) { if (lo < 0) lo = q; hi = q; } } return [lo, hi]; };
+    const [x0, x1] = span(col, sh), [y0, y1] = span(row, sw);
+    let cx = 0, cy = 0, cw = w0, ch = h0;
+    if (x1 > x0 && y1 > y0) { const m = 6; cx = Math.max(0, (x0 - m) / ss); cy = Math.max(0, (y0 - m) / ss); cw = Math.min(w0, (x1 + m) / ss) - cx; ch = Math.min(h0, (y1 + m) / ss) - cy; }
+    // 2) MEA receipts are landscape with the logo and header at the top: turn photos taken sideways or upside down
+    //    orange logo if the photo is in colour, otherwise the heavier (header) side of the print
+    const X0 = Math.max(0, x0), X1 = x1 > x0 ? x1 : sw - 1, Y0 = Math.max(0, y0), Y1 = y1 > y0 ? y1 : sh - 1, mx = (X0 + X1) / 2, my = (Y0 + Y1) / 2;
+    let L = 0, R = 0, T = 0, B = 0;
+    for (let yy = Y0; yy <= Y1; yy++) for (let xx = X0; xx <= X1; xx++) if (ink[yy * sw + xx]) { if (xx < mx) L++; else R++; if (yy < my) T++; else B++; }
+    let rot = 0; const tall = ch > cw * 1.05;
+    if (on > 25) { const lx = (ox / on - cx * ss) / (cw * ss), ly = (oy / on - cy * ss) / (ch * ss);
+      if (tall) rot = lx > 0.5 ? -90 : 90; else if (lx > 0.5 && ly > 0.5) rot = 180; }
+    else if (tall) rot = R >= L ? -90 : 90;
+    else if (B > T * 1.6) rot = 180;
+    const sc = Math.min(1, maxPx / Math.max(cw, ch)), dw = Math.round(cw * sc), dh = Math.round(ch * sc);
+    const c = document.createElement("canvas"); const side = rot === 90 || rot === -90; c.width = side ? dh : dw; c.height = side ? dw : dh;
+    const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+    x.translate(c.width / 2, c.height / 2); x.rotate((rot * Math.PI) / 180); x.drawImage(src, cx, cy, cw, ch, -dw / 2, -dh / 2, dw, dh);
     if (src.src) URL.revokeObjectURL(src.src);
-    return { url: c.toDataURL("image/jpeg", 0.85), w: c.width, h: c.height };
+    return { url: c.toDataURL("image/jpeg", 0.88), w: c.width, h: c.height };
   };
   window.readReceipt = (blob, isPdf, step) => (isPdf ? pdfText(blob, step) : ocr(blob, step));
 
