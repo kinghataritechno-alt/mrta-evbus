@@ -1459,7 +1459,7 @@ async function chargePdf(R, a, b, label, vc) {
     let wk = null;
     parts.forEach((pt, i) => {
       const w = pt.land ? 1123 : W, h = pt.land ? 794 : H, ori = pt.land ? "landscape" : "portrait";
-      const opt = { margin: 0, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: pt.rc ? 3 : 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: Math.max(w, window.innerWidth), scrollX: 0, scrollY: 0 }, jsPDF: { unit: "px", format: [w, h], orientation: ori, hotfixes: ["px_scaling"] }, pagebreak: { mode: [] } };
+      const opt = { margin: 0, image: { type: "jpeg", quality: pt.rc ? 0.85 : 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: Math.max(w, window.innerWidth), scrollX: 0, scrollY: 0 }, jsPDF: { unit: "px", format: [w, h], orientation: ori, hotfixes: ["px_scaling"] }, pagebreak: { mode: [] } };
       wk = i === 0 ? html2pdf().set(opt).from(els[i]).toPdf() : wk.set(opt).get("pdf").then((pdf) => pdf.addPage([w, h], ori)).from(els[i]).toContainer().toCanvas().toPdf();
     });
     const blob = await wk.outputPdf("blob");
