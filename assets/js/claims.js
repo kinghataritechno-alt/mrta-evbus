@@ -130,6 +130,7 @@
     main().querySelectorAll("[data-clr]").forEach((b) => (b.onclick = async () => { if (!confirmTap(b, "แตะอีกครั้งเพื่อล้างวันที่ยื่น/เงินเข้า")) return; try { await q(sb.rpc("claim_mark", { p_round: +b.dataset.clr, p_clear: true })); toast("ล้างวันที่แล้ว"); re(); } catch (e) { toast(errMsg(e)); } }));
     main().querySelectorAll("[data-led]").forEach((b) => (b.onclick = async () => { const L = await myLedger(b.dataset.led); if (L) ledgerSheet(nm(b.dataset.led), L); }));
   }
+  const thaiDates = (root) => root.querySelectorAll(".thd").forEach((sm) => { const i = $(sm.dataset.for); if (i) i.addEventListener("change", () => (sm.textContent = i.value ? dd(i.value) : "")); });
   const confirmTap = (b, msg) => { if (b.dataset.armed) return true; b.dataset.armed = "1"; toast(msg); setTimeout(() => delete b.dataset.armed, 4000); return false; };
 
   async function closeSheet(P, after) {
@@ -151,11 +152,13 @@
   function transferSheet(n, empId, name, left, after) {
     const s = $("sheet");
     s.innerHTML = `<div class="in"><div class="sh"><b>โอนคืน ${esc(name)} · รอบที่ ${n}</b><button class="lnk" id="shX">ปิด</button></div>
-      <div class="grid"><div class="fld"><label for="tA">ยอดโอน (บาท)</label><input id="tA" inputmode="decimal" value="${left.toFixed(2)}"></div><div class="fld"><label for="tD">วันที่โอน</label><input id="tD" type="date" max="${today()}" value="${today()}"></div></div>
-      <div class="fld"><label for="tS">สลิปโอนเงิน (ไม่บังคับ)</label><input id="tS" type="file" accept="image/*"></div>
+      <div class="grid"><div class="fld"><label for="tA">ยอดโอน (บาท)</label><input id="tA" inputmode="decimal" value="${left.toFixed(2)}"></div><div class="fld"><label for="tD">วันที่โอน</label><input id="tD" type="date" max="${today()}" value="${today()}"><small class="sm thd" data-for="tD">${dd(today())}</small></div></div>
+      <div class="fld"><label>สลิปโอนเงิน (ไม่บังคับ)</label><label class="btn block" for="tS" style="margin:0">📎 <span id="tSn">แนบรูปสลิป</span></label><input id="tS" type="file" accept="image/*" hidden></div>
       <div class="fld"><label for="tN">หมายเหตุ</label><input id="tN" placeholder="เช่น โอนผ่าน K PLUS"></div>
       <p class="err" id="tE" hidden></p><button class="btn pri block" id="tGo">บันทึกโอนคืน</button></div>`;
     s.hidden = false; $("shX").onclick = () => (s.hidden = true);
+    thaiDates(s);
+    $("tS").onchange = () => { const f = $("tS").files[0]; $("tSn").textContent = f ? `แนบแล้ว: ${f.name}` : "แนบรูปสลิป"; };
     $("tGo").onclick = async () => { const b = $("tGo"), err = $("tE"), amt = parseFloat(String($("tA").value).replace(/,/g, ""));
       if (!(amt > 0)) { err.textContent = "ใส่ยอดโอน"; err.hidden = false; return; }
       b.disabled = true; b.innerHTML = `<span class="spin"></span>กำลังบันทึก…`;
@@ -170,10 +173,10 @@
   function markSheet(n, kind, tot, after) {
     const s = $("sheet"), rcv = kind === "rcv";
     s.innerHTML = `<div class="in"><div class="sh"><b>${rcv ? "เงินบริษัทเข้า" : "ยื่นเบิกบริษัท"} · รอบที่ ${n}</b><button class="lnk" id="shX">ปิด</button></div>
-      <div class="grid"><div class="fld"><label for="mD">${rcv ? "วันที่เงินเข้า" : "วันที่ยื่นเบิก"}</label><input id="mD" type="date" max="${today()}" value="${today()}"></div>
+      <div class="grid"><div class="fld"><label for="mD">${rcv ? "วันที่เงินเข้า" : "วันที่ยื่นเบิก"}</label><input id="mD" type="date" max="${today()}" value="${today()}"><small class="sm thd" data-for="mD">${dd(today())}</small></div>
       ${rcv ? `<div class="fld"><label for="mA">ยอดที่ได้รับ (บาท)</label><input id="mA" inputmode="decimal" value="${tot.toFixed(2)}"></div>` : ""}</div>
       <p class="err" id="mE" hidden></p><button class="btn pri block" id="mGo">บันทึก</button></div>`;
-    s.hidden = false; $("shX").onclick = () => (s.hidden = true);
+    s.hidden = false; $("shX").onclick = () => (s.hidden = true); thaiDates(s);
     $("mGo").onclick = async () => { const b = $("mGo"); b.disabled = true;
       try { await q(sb.rpc("claim_mark", rcv ? { p_round: n, p_received: $("mD").value, p_amount: parseFloat(String($("mA").value).replace(/,/g, "")) || tot } : { p_round: n, p_submitted: $("mD").value }));
         s.hidden = true; toast("บันทึกแล้ว"); after(); }

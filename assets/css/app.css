@@ -588,3 +588,4 @@ table.trm tr.tr-tot td{border-top:2px solid var(--line);background:rgba(31,194,2
 .rv-k{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
 .rv-k div{background:var(--bg2,rgba(127,127,127,.08));border-radius:10px;padding:8px}.rv-k small{display:block;color:var(--muted);font-size:.72rem}.rv-k b{font-size:1.1rem}
 .rv-t{margin-top:8px;font-size:.8rem}
+.thd{display:block;margin-top:2px;color:var(--muted)}
