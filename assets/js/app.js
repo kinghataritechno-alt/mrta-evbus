@@ -1488,18 +1488,13 @@ async function receiptImgs(R, step) {
   const ord = new Map(L.map((r, i) => [r.id, i])); out.sort((a, b) => ord.get(a.r.id) - ord.get(b.r.id));
   return { list: out, miss, fail };
 }
-/* receipt attachments (accounting, 17–18 พ.ย. 2569): one receipt per A4 landscape page, no report header —
-   only "เอกสารแนบใบเสร็จค่าชาร์จไฟฟ้า", which bus and whose charge (the person who recorded it) */
+/* receipt attachments (accounting, 17–18 พ.ย. 2569): one receipt per A4 landscape page, receipt image only */
 function rcLayout(list, miss, who) {
-  const PW = 1123, PH = 794, PAD = 34, TOP = 78, cw = PW - PAD * 2, ch = PH - TOP - PAD;
-  return list.map((x, p) => {
-    const r = x.r, v = VEH.find((y) => y.code === r.bus), k = Math.min(cw / x.w, ch / x.h), iw = Math.floor(x.w * k), ih = Math.floor(x.h * k);
-    return { land: true, fn: () => `<div style="position:absolute;left:${PAD}px;right:${PAD}px;top:22px;color:#0f1b3d;display:flex;justify-content:space-between;align-items:flex-end">
-        <div><div style="font-size:19px;font-weight:700">เอกสารแนบใบเสร็จค่าชาร์จไฟฟ้า</div>
-        <div style="font-size:14px">รถ <b>${r.bus}</b>${v && v.plate ? ` ทะเบียน ${esc(v.plate)}` : ""} · ${esc(who(r.employee_id))}</div></div>
-        <div style="font-size:12px;color:#4a5a80">ใบที่ ${p + 1}/${list.length}</div></div>
-      <div style="position:absolute;left:${PAD}px;right:${PAD}px;top:${TOP - 8}px;height:0;border-top:1.5px solid #0f1b3d"></div>
-      <div style="position:absolute;left:${PAD}px;top:${TOP}px;width:${cw}px;height:${ch}px;display:flex;align-items:center;justify-content:center">${x.url ? `<img src="${x.url}" style="width:${iw}px;height:${ih}px;display:block">` : `<span style="font-size:14px;color:#c92a2a">เปิดไฟล์ใบเสร็จไม่ได้</span>`}</div>` };
+  // accounting (18 พ.ย. 2569): the receipt only — no title or caption on the page
+  const PW = 1123, PH = 794, PAD = 28, cw = PW - PAD * 2, ch = PH - PAD * 2;
+  return list.map((x) => {
+    const k = Math.min(cw / x.w, ch / x.h), iw = Math.floor(x.w * k), ih = Math.floor(x.h * k);
+    return { land: true, fn: () => `<div style="position:absolute;left:${PAD}px;top:${PAD}px;width:${cw}px;height:${ch}px;display:flex;align-items:center;justify-content:center">${x.url ? `<img src="${x.url}" style="width:${iw}px;height:${ih}px;display:block">` : `<span style="font-size:14px;color:#c92a2a">เปิดไฟล์ใบเสร็จไม่ได้ · ${esc(x.r.receipt_no || "")}</span>`}</div>` };
   });
 }
 /* ---------- ใบสำคัญจ่าย (AC-FM-007) — cover sheet for the petty-cash (เงินทดรองจ่าย) claim of charging costs ----------
