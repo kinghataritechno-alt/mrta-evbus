@@ -1443,8 +1443,8 @@ async function chargePdf(R, a, b, label, vc) {
     // receipt images (every attached receipt in the range) · one per landscape page
     btn.innerHTML = `<span class="spin"></span> กำลังโหลดภาพใบเสร็จ…`;
     const imgs = await receiptImgs(R, (i, n) => (btn.innerHTML = `<span class="spin"></span> โหลดภาพใบเสร็จ ${i}/${n}…`));
-    const rcPages = imgs.list.length ? rcLayout(imgs.list, imgs.miss) : [];
-    of += rcPages.length;
+    const rcPages = imgs.list.length ? rcLayout(imgs.list, imgs.miss, (id) => (emps.find((e) => e.id === id) || {}).full_name || "–") : [];
+    // attachment pages carry no report header and are not counted in the report's page numbers
     const pages = [summary(1, of, chunks.length === 0)].concat(chunks.map((c, i) => `${head(i + 2, of)}<h2>รายการชาร์จและใบเสร็จ ${i ? "(ต่อ)" : ""}</h2><table class="dst">${lhead}<tbody>${c.join("")}${i === chunks.length - 1 ? `<tr><td colspan="7"><b>รวม ${R.length} รายการ</b></td><td class="r"><b>${fmt(K, 2)}</b></td><td class="r"><b>${fmt(T)}</b></td></tr>` : ""}</tbody></table>${i === chunks.length - 1 ? dSign(chargeSigners()) : ""}${foot(i + 2, of)}`))
       .map((html) => ({ html, land: false }))
       .concat(rcPages.map((pg, i) => ({ html: pg.fn(head(chunks.length + 2 + i, of), foot(chunks.length + 2 + i, of)), land: true, rc: true })));
@@ -1485,23 +1485,18 @@ async function receiptImgs(R, step) {
   const ord = new Map(L.map((r, i) => [r.id, i])); out.sort((a, b) => ord.get(a.r.id) - ord.get(b.r.id));
   return { list: out, miss, fail };
 }
-/* receipt images: one receipt per A4 landscape page, as accounting asks (17 พ.ย. 2569) · RC_PER 4 = 2 × 2 grid */
-const RC_PER = 1;
-function rcLayout(list, miss) {
-  const PW = 1123, PH = 794, W = PW - 68, GAP = 10, CAP = 18, nPg = Math.ceil(list.length / RC_PER);
-  const probe = document.createElement("div"); probe.className = "doc"; probe.style.cssText = `position:fixed;left:-20000px;top:0;width:${PW}px`;
-  probe.innerHTML = `<section class="dpg" style="width:${PW}px">${dHead("x", "x")}<h2>x</h2></section>`; document.body.appendChild(probe);
-  const top = probe.firstChild.offsetHeight - 40 + 6; probe.remove(); // .dpg has 40px bottom padding
-  const NC = RC_PER === 1 ? 1 : 2, NR = Math.ceil(RC_PER / NC), cw = (W - GAP * (NC - 1)) / NC, ch = (PH - top - 40 - GAP * (NR - 1)) / NR - (RC_PER === 1 ? 26 : CAP);
-  const capH = RC_PER === 1 ? 26 : CAP, capF = RC_PER === 1 ? 14 : 11;
-  return Array.from({ length: nPg }, (_, p) => {
-    const L = list.slice(p * RC_PER, (p + 1) * RC_PER);
-    const cells = L.map((x, i) => { const k = Math.min(cw / x.w, ch / x.h), iw = Math.floor(x.w * k), ih = Math.floor(x.h * k), r = x.r, gi = p * RC_PER + i + 1;
-      return `<div style="width:${cw}px;height:${ch + capH}px;display:flex;flex-direction:column;align-items:center;border:1px solid #c9d2e6;box-sizing:border-box;overflow:hidden">
-        <div style="height:${capH}px;line-height:${capH}px;font-size:${capF}px;color:#0f1b3d;white-space:nowrap;overflow:hidden;width:100%;text-align:center;background:#eef2fa"><b>${gi}. ${r.bus}</b> · ${bk(r.receipt_date)} · ${r.receipt_no || "–"}${r.amt ? ` · ${fmt(r.amt)} บาท` : ""}${r.kwh ? ` · ${fmt(r.kwh, 2)} kWh` : ""}</div>
-        <div style="flex:1;display:flex;align-items:center;justify-content:center;width:100%">${x.url ? `<img src="${x.url}" style="width:${iw - 2}px;height:${ih - 2}px;display:block">` : `<span style="font-size:12px;color:#c92a2a">เปิดไฟล์ใบเสร็จไม่ได้</span>`}</div></div>`; }).join("");
-    return { land: true, fn: (head, foot) => `${head}<h2>ภาพใบเสร็จ ใบที่ ${RC_PER === 1 ? p + 1 : `${p * RC_PER + 1}–${p * RC_PER + L.length}`} จาก ${list.length}${miss && p === 0 ? ` <span style="font-size:11px;font-weight:400;color:#4a5a80">· ไม่มีไฟล์ภาพ ${miss} รายการ</span>` : ""}</h2>
-      <div style="position:absolute;left:34px;top:${top}px;display:grid;grid-template-columns:repeat(${NC},${cw}px);grid-auto-rows:${ch + capH}px;gap:${GAP}px">${cells}</div>${foot}` };
+/* receipt attachments (accounting, 17–18 พ.ย. 2569): one receipt per A4 landscape page, no report header —
+   only "เอกสารแนบใบเสร็จค่าชาร์จไฟฟ้า", which bus and whose charge (the person who recorded it) */
+function rcLayout(list, miss, who) {
+  const PW = 1123, PH = 794, PAD = 34, TOP = 78, cw = PW - PAD * 2, ch = PH - TOP - PAD;
+  return list.map((x, p) => {
+    const r = x.r, v = VEH.find((y) => y.code === r.bus), k = Math.min(cw / x.w, ch / x.h), iw = Math.floor(x.w * k), ih = Math.floor(x.h * k);
+    return { land: true, fn: () => `<div style="position:absolute;left:${PAD}px;right:${PAD}px;top:22px;color:#0f1b3d;display:flex;justify-content:space-between;align-items:flex-end">
+        <div><div style="font-size:19px;font-weight:700">เอกสารแนบใบเสร็จค่าชาร์จไฟฟ้า</div>
+        <div style="font-size:14px">รถ <b>${r.bus}</b>${v && v.plate ? ` ทะเบียน ${esc(v.plate)}` : ""} · ${esc(who(r.employee_id))}</div></div>
+        <div style="font-size:12px;color:#4a5a80">ใบที่ ${p + 1}/${list.length}</div></div>
+      <div style="position:absolute;left:${PAD}px;right:${PAD}px;top:${TOP - 8}px;height:0;border-top:1.5px solid #0f1b3d"></div>
+      <div style="position:absolute;left:${PAD}px;top:${TOP}px;width:${cw}px;height:${ch}px;display:flex;align-items:center;justify-content:center">${x.url ? `<img src="${x.url}" style="width:${iw}px;height:${ih}px;display:block">` : `<span style="font-size:14px;color:#c92a2a">เปิดไฟล์ใบเสร็จไม่ได้</span>`}</div>` };
   });
 }
 /* ---------- ใบสำคัญจ่าย (AC-FM-007) — cover sheet for the petty-cash (เงินทดรองจ่าย) claim of charging costs ----------
